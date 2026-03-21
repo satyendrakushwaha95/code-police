@@ -212,7 +212,7 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
   }, [history, activeRun]);
 
   const handleCancel = async (runId?: string) => {
-    await cancel();
+    await cancel(runId);
     if (runId) {
       setStopModalData({ runId });
       setStopPrompt('');

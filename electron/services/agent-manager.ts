@@ -206,8 +206,10 @@ export class AgentManager {
       }
     }
 
+    // Skip allowed check if wildcard is present or list is empty
     if (constraints.allowedFilePatterns.length > 0 &&
-        constraints.allowedFilePatterns[0] !== '*') {
+        !constraints.allowedFilePatterns.includes('*') &&
+        !constraints.allowedFilePatterns.includes('**/*')) {
       let allowed = false;
       for (const pattern of constraints.allowedFilePatterns) {
         if (this.matchPattern(filePath, pattern)) {

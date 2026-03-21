@@ -231,6 +231,11 @@ Generate the code changes to complete this task.`;
       }
 
       if (constraints?.allowedFilePatterns && constraints.allowedFilePatterns.length > 0) {
+        // Skip allowed check if wildcard is present
+        if (constraints.allowedFilePatterns.includes('*') || constraints.allowedFilePatterns.includes('**/*')) {
+          continue;
+        }
+
         let matchesAllowed = false;
         for (const pattern of constraints.allowedFilePatterns) {
           if (this.matchPattern(change.file_path, pattern)) {

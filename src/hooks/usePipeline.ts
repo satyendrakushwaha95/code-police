@@ -110,7 +110,7 @@ const ipcRenderer = (window as any).ipcRenderer;
 interface UsePipelineReturn {
   run: (task: string, options: PipelineOptions, projectRoot?: string, agentId?: string) => Promise<{ runId: string }>;
   retryFix: (runId: string, suggestions: string[]) => Promise<{ runId: string }>;
-  cancel: () => Promise<void>;
+  cancel: (runId?: string) => Promise<void>;
   deleteRun: (runId: string) => Promise<void>;
   analyzeAndRetry: (runId: string, userPrompt: string) => Promise<{ runId: string; action: string; stage?: string; task?: string; feedback?: string; reason?: string }>;
   activeRun: PipelineRun | null;
@@ -220,12 +220,16 @@ export function usePipeline(): UsePipelineReturn {
     }
   }, [startPolling, stopPolling]);
 
-  const cancel = useCallback(async () => {
-    if (currentRunId.current) {
-      await ipcRenderer.invoke('pipeline:cancel', { runId: currentRunId.current });
+  const cancel = useCallback(async (runId?: string) => {
+    const targetRunId = runId || currentRunId.current;
+    if (targetRunId) {
+      await ipcRenderer.invoke('pipeline:cancel', { runId: targetRunId });
+      setIsRunning(false);
       stopPolling();
+      setActiveRun(null);
+      refreshHistory();
     }
-  }, [stopPolling]);
+  }, [stopPolling, refreshHistory]);
 
   const deleteRun = useCallback(async (runId: string) => {
     await ipcRenderer.invoke('pipeline:deleteRun', { runId });
