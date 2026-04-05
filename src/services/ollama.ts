@@ -4,8 +4,25 @@ const ipcRenderer = (window as any).ipcRenderer;
 
 export interface RoutingResponse {
   resolvedModel: string;
+  providerId: string;
   category: string;
   usedFallback: boolean;
+}
+
+export interface StreamChunk {
+  content: string;
+  done: boolean;
+  model?: string;
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+}
+
+export interface ProviderModel {
+  id: string;
+  name: string;
+  providerId: string;
+  providerName: string;
+  size?: number;
+  contextLength?: number;
 }
 
 export class OllamaService {
@@ -43,6 +60,16 @@ export class OllamaService {
     }
   }
 
+  /** List models from all configured providers via IPC */
+  async listAllProviderModels(): Promise<ProviderModel[]> {
+    try {
+      return await ipcRenderer.invoke('provider:listAllModels');
+    } catch (err) {
+      console.error('Failed to list provider models:', err);
+      return [];
+    }
+  }
+
   async showModel(name: string): Promise<Record<string, unknown>> {
     const res = await fetch(`${this.endpoint}/api/show`, {
       method: 'POST',
@@ -62,6 +89,67 @@ export class OllamaService {
     }
   }
 
+  /**
+   * Stream chat via IPC → main process handles the provider-specific logic.
+   * Returns a streamId that can be used to abort.
+   */
+  startIPCStream(
+    streamId: string,
+    providerId: string,
+    model: string,
+    messages: Array<{ role: string; content: string }>,
+    options?: { temperature?: number; top_p?: number; max_tokens?: number; num_ctx?: number },
+    messageId?: string,
+    conversationId?: string
+  ): Promise<{ streamId: string }> {
+    return ipcRenderer.invoke('chat:stream', {
+      streamId,
+      providerId,
+      model,
+      messages,
+      options,
+      messageId,
+      conversationId,
+    });
+  }
+
+  abortIPCStream(streamId: string): void {
+    ipcRenderer.send('chat:abort', streamId);
+  }
+
+  onStreamChunk(callback: (data: { streamId: string } & StreamChunk) => void): () => void {
+    const handler = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('chat:chunk', handler);
+    return () => ipcRenderer.off('chat:chunk', handler);
+  }
+
+  onStreamError(callback: (data: { streamId: string; error: string }) => void): () => void {
+    const handler = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('chat:error', handler);
+    return () => ipcRenderer.off('chat:error', handler);
+  }
+
+  /**
+   * Non-streaming chat via IPC. Used by code gen, refactor, design doc, prompt enhancer, etc.
+   * Routes through the provider registry and records usage automatically.
+   */
+  async chatComplete(
+    providerId: string,
+    model: string,
+    messages: Array<{ role: string; content: string }>,
+    options?: { temperature?: number; top_p?: number; max_tokens?: number; num_ctx?: number },
+    feature?: string
+  ): Promise<{ content: string; model: string; usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }; durationMs: number }> {
+    return ipcRenderer.invoke('chat:complete', {
+      providerId,
+      model,
+      messages,
+      options,
+      feature,
+    });
+  }
+
+  // Legacy direct streaming — kept for backwards compatibility
   async *chatStream(
     model: string,
     messages: OllamaChatMessage[],
@@ -114,7 +202,6 @@ export class OllamaService {
         }
       }
 
-      // Process remaining buffer
       if (buffer.trim()) {
         try {
           yield JSON.parse(buffer.trim());

@@ -1,8 +1,7 @@
-import { OllamaEmbeddingsService, OllamaChatMessage } from '../embeddings';
+import { OllamaChatMessage } from '../embeddings';
+import { getSharedOllama } from '../shared-ollama';
 import { RoutingDecision } from '../model-router';
 import { TaskPlan, CodeOutput, ReviewResult } from '../pipeline-types';
-
-const ollama = new OllamaEmbeddingsService();
 
 export interface ValidationResult {
   passed: boolean;
@@ -173,6 +172,7 @@ Return your validation result.`;
 
     try {
       let fullContent = '';
+      const ollama = getSharedOllama();
       for await (const chunk of ollama.chat(modelDecision.resolvedModel, messages)) {
         if (chunk.message?.content) {
           fullContent += chunk.message.content;

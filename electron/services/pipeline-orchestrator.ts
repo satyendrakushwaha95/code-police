@@ -11,6 +11,8 @@ import { VectorDBService } from './vectordb';
 import { OllamaEmbeddingsService } from './embeddings';
 import { getAgentManager } from './agent-manager';
 import { AgentConfig } from './agent-types';
+import { getUsageTracker } from './usage-tracker';
+import { getSharedOllama } from './shared-ollama';
 
 export class PipelineOrchestrator {
   private stateStore: PipelineStateStore;
@@ -141,6 +143,7 @@ export class PipelineOrchestrator {
         duration_ms: Date.now() - planStartTime,
         output: taskPlan
       });
+      this.recordStageUsage(runId, 'plan', modelUsed, Date.now() - planStartTime);
       this.emitStageUpdate(runId, 'plan', 'complete', taskPlan);
       this.emitRealTimeUpdate(runId, 'plan', 'complete', this.createActivityLog(`Plan completed in ${((Date.now() - planStartTime) / 1000).toFixed(1)}s${this.activeAgent ? ` using ${this.activeAgent.name}` : ''}`, 'success'));
 
@@ -217,6 +220,7 @@ export class PipelineOrchestrator {
           duration_ms: Date.now() - codeStartTime,
           output: codeOutput
         });
+        this.recordStageUsage(runId, 'action', codeModelUsed, Date.now() - codeStartTime);
         this.emitStageUpdate(runId, 'action', 'complete', codeOutput);
         this.emitRealTimeUpdate(runId, 'action', 'complete', this.createActivityLog(`Code stage completed in ${((Date.now() - codeStartTime) / 1000).toFixed(1)}s`, 'success'));
 
@@ -252,6 +256,7 @@ export class PipelineOrchestrator {
           duration_ms: Date.now() - reviewStartTime,
           output: reviewResult
         });
+        this.recordStageUsage(runId, 'review', reviewModel.resolvedModel, Date.now() - reviewStartTime);
         this.emitStageUpdate(runId, 'review', 'complete', reviewResult);
         this.emitRealTimeUpdate(runId, 'review', 'complete', this.createActivityLog(`Review completed in ${((Date.now() - reviewStartTime) / 1000).toFixed(1)}s`, 'success'));
 
@@ -335,6 +340,7 @@ export class PipelineOrchestrator {
         duration_ms: Date.now() - validateStartTime,
         output: validationResult
       });
+      this.recordStageUsage(runId, 'validate', validateModel.resolvedModel, Date.now() - validateStartTime);
       this.emitStageUpdate(runId, 'validate', 'complete', validationResult);
       this.emitRealTimeUpdate(runId, 'validate', 'complete', this.createActivityLog(
         `Validation ${validationResult.passed ? 'passed' : 'failed'} (${validationResult.coverage_score}% coverage)`,
@@ -450,6 +456,7 @@ export class PipelineOrchestrator {
         duration_ms: Date.now() - codeStartTime,
         output: codeOutput
       });
+      this.recordStageUsage(runId, 'action', codeModel.resolvedModel, Date.now() - codeStartTime);
       this.emitStageUpdate(runId, 'action', 'complete', codeOutput);
       this.emitRealTimeUpdate(runId, 'action', 'complete', this.createActivityLog(`Code stage completed in ${((Date.now() - codeStartTime) / 1000).toFixed(1)}s`, 'success'), {
         output_preview: `${codeOutput.file_changes.length} file changes`
@@ -473,6 +480,7 @@ export class PipelineOrchestrator {
         duration_ms: Date.now() - reviewStartTime,
         output: reviewResult
       });
+      this.recordStageUsage(runId, 'review', reviewModel.resolvedModel, Date.now() - reviewStartTime);
       this.emitStageUpdate(runId, 'review', 'complete', reviewResult);
       this.emitRealTimeUpdate(runId, 'review', 'complete', this.createActivityLog(`Review completed in ${((Date.now() - reviewStartTime) / 1000).toFixed(1)}s`, 'success'), {
         output_preview: `Verdict: ${reviewResult.verdict}, ${reviewResult.issues.length} issues`
@@ -574,6 +582,29 @@ export class PipelineOrchestrator {
 
   private isCancelled(runId: string): boolean {
     return this.cancellationFlags.get(runId) === true;
+  }
+
+  private recordStageUsage(runId: string, stage: PipelineStage, model: string, durationMs: number): void {
+    try {
+      const shared = getSharedOllama();
+      const usage = shared.lastUsage;
+      if (!usage) return;
+
+      const tracker = getUsageTracker();
+      tracker.record({
+        messageId: `pipeline:${runId}:${stage}`,
+        conversationId: `pipeline:${runId}`,
+        providerId: 'ollama-default',
+        model,
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        totalTokens: usage.totalTokens,
+        durationMs,
+        timestamp: Date.now(),
+      });
+    } catch (err) {
+      console.warn(`[PipelineOrchestrator] Failed to record usage for ${stage}:`, err);
+    }
   }
 
   private async getContext(taskDescription: string): Promise<Array<{ content: string; relativeFilePath: string }>> {

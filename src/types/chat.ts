@@ -7,6 +7,16 @@ export interface FileAttachment {
   truncated?: boolean;
 }
 
+export interface MessageUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  durationMs: number;
+  model?: string;
+  providerId?: string;
+}
+
 export interface Message {
   id: string;
   role: 'system' | 'user' | 'assistant';
@@ -17,6 +27,7 @@ export interface Message {
   isPipeline?: boolean;
   pipelineStatus?: 'starting' | 'running' | 'complete' | 'failed' | 'cancelled';
   pipelineRunId?: string;
+  usage?: MessageUsage;
 }
 
 export interface Conversation {

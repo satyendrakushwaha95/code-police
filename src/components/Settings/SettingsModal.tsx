@@ -3,9 +3,11 @@ import { useSettings } from '../../store/SettingsContext';
 import { ollamaService } from '../../services/ollama';
 import type { OllamaModel } from '../../types/chat';
 import RoutingSettingsPanel from './RoutingSettingsPanel';
+import ProviderSettingsPanel from './ProviderSettingsPanel';
+import ProfileSettingsPanel from './ProfileSettingsPanel';
 import './Settings.css';
 
-type SettingsTab = 'general' | 'modelrouter';
+type SettingsTab = 'general' | 'profile' | 'providers' | 'modelrouter';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -81,6 +83,18 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
             onClick={() => setActiveTab('general')}
           >
             General
+          </button>
+          <button 
+            className={`settings-tab ${activeTab === 'profile' ? 'active' : ''}`}
+            onClick={() => setActiveTab('profile')}
+          >
+            Profile & Memory
+          </button>
+          <button 
+            className={`settings-tab ${activeTab === 'providers' ? 'active' : ''}`}
+            onClick={() => setActiveTab('providers')}
+          >
+            Providers
           </button>
           <button 
             className={`settings-tab ${activeTab === 'modelrouter' ? 'active' : ''}`}
@@ -244,6 +258,14 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
               </div>
             </div>
           </>
+          )}
+
+          {activeTab === 'profile' && (
+            <ProfileSettingsPanel />
+          )}
+
+          {activeTab === 'providers' && (
+            <ProviderSettingsPanel />
           )}
 
           {activeTab === 'modelrouter' && (

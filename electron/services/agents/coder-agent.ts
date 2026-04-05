@@ -1,9 +1,8 @@
 import path from 'node:path';
-import { OllamaEmbeddingsService, OllamaChatMessage } from '../embeddings';
+import { OllamaChatMessage } from '../embeddings';
+import { getSharedOllama } from '../shared-ollama';
 import { RoutingDecision } from '../model-router';
 import { TaskPlan, CodeOutput, FileChange } from '../pipeline-types';
-
-const ollama = new OllamaEmbeddingsService();
 
 export class SecurityError extends Error {
   constructor(message: string, public filePath?: string) {
@@ -104,6 +103,7 @@ Generate the code changes to complete this task.`;
 
     let rawOutput = '';
     try {
+      const ollama = getSharedOllama();
       for await (const chunk of ollama.chat(modelDecision.resolvedModel, messages)) {
         if (chunk.message?.content) {
           rawOutput += chunk.message.content;

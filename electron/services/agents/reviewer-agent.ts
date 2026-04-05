@@ -1,8 +1,7 @@
-import { OllamaEmbeddingsService, OllamaChatMessage } from '../embeddings';
+import { OllamaChatMessage } from '../embeddings';
+import { getSharedOllama } from '../shared-ollama';
 import { RoutingDecision } from '../model-router';
 import { TaskPlan, CodeOutput, ReviewResult } from '../pipeline-types';
-
-const ollama = new OllamaEmbeddingsService();
 
 export class ReviewerAgent {
   async execute(
@@ -65,6 +64,7 @@ Review these changes to verify the CORE OBJECTIVE is achieved. Minor deviations 
 
     let rawOutput = '';
     try {
+      const ollama = getSharedOllama();
       for await (const chunk of ollama.chat(modelDecision.resolvedModel, messages)) {
         if (chunk.message?.content) {
           rawOutput += chunk.message.content;

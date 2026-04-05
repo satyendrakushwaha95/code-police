@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, globalShortcut } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { VectorDBService } from './services/vectordb';
@@ -13,6 +13,10 @@ import { getPipelineOrchestrator } from './services/pipeline-orchestrator';
 import { PipelineOptions, PipelineStage } from './services/pipeline-types';
 import { getAgentManager } from './services/agent-manager';
 import { CreateAgentInput, UpdateAgentInput, AGENT_PRESETS } from './services/agent-types';
+import { getProviderRegistry } from './services/providers/provider-registry';
+import { ProviderConfig, PROVIDER_PRESETS } from './services/providers/provider-types';
+import { getUsageTracker } from './services/usage-tracker';
+import { getLongTermMemory } from './services/long-term-memory';
 
 process.env.APP_ROOT = path.join(__dirname, '..');
 
@@ -49,6 +53,7 @@ function createWindow() {
 }
 
 app.on('window-all-closed', () => {
+  globalShortcut.unregisterAll();
   if (process.platform !== 'darwin') {
     app.quit();
     win = null;
@@ -84,11 +89,30 @@ app.whenReady().then(async () => {
 
     const agentManager = getAgentManager();
     agentManager.initialize();
+
+    const providerRegistry = getProviderRegistry();
+    console.log('[Main] Provider registry initialized with', providerRegistry.getEnabledProviderIds().length, 'providers');
+
+    getUsageTracker(userDataPath);
+    console.log('[Main] Usage tracker initialized');
+
+    getLongTermMemory(userDataPath);
+    console.log('[Main] Long-term memory initialized');
   } catch (err) {
     console.error('Failed to init services:', err);
     registerToolHandlers();
   }
   createWindow();
+
+  // Global hotkey: Ctrl+Space brings the app to front and opens command palette
+  globalShortcut.register('CommandOrControl+Space', () => {
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      win.webContents.send('jarvis:summon');
+    }
+  });
 });
 
 // Helper to recursively scan directory
@@ -388,6 +412,7 @@ ipcMain.handle('ollama:chat', async (_, payload: {
   
   return {
     resolvedModel: decision.resolvedModel,
+    providerId: decision.providerId,
     category: decision.category,
     usedFallback: decision.usedFallback,
     messages,
@@ -576,4 +601,413 @@ ipcMain.handle('agent:setActive', async (_, id: string | null) => {
 ipcMain.handle('agent:getActive', async () => {
   const agentManager = getAgentManager();
   return agentManager.getActive();
+});
+
+// ─── Provider Management IPC Handlers ────────────────────────────────────────
+
+ipcMain.handle('provider:list', async () => {
+  const registry = getProviderRegistry();
+  return registry.getMaskedConfigs();
+});
+
+ipcMain.handle('provider:add', async (_, config: ProviderConfig) => {
+  try {
+    const registry = getProviderRegistry();
+    const saved = registry.addProvider(config);
+    return { success: true, provider: { ...saved, apiKey: saved.apiKey ? '••••••••' : null } };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('provider:update', async (_, { id, updates }: { id: string; updates: Partial<ProviderConfig> }) => {
+  try {
+    const registry = getProviderRegistry();
+    const updated = registry.updateProvider(id, updates);
+    return { success: true, provider: { ...updated, apiKey: updated.apiKey ? '••••••••' : null } };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('provider:remove', async (_, { id }: { id: string }) => {
+  try {
+    const registry = getProviderRegistry();
+    registry.removeProvider(id);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('provider:test', async (_, { id }: { id: string }) => {
+  const registry = getProviderRegistry();
+  const ok = await registry.checkConnection(id);
+  return { connected: ok };
+});
+
+ipcMain.handle('provider:listModels', async (_, { id }: { id: string }) => {
+  const registry = getProviderRegistry();
+  return registry.listModels(id);
+});
+
+ipcMain.handle('provider:listAllModels', async () => {
+  const registry = getProviderRegistry();
+  return registry.listAllModels();
+});
+
+ipcMain.handle('provider:getPresets', async () => {
+  return PROVIDER_PRESETS;
+});
+
+// ─── Chat Streaming via IPC ──────────────────────────────────────────────────
+
+const activeStreams = new Map<string, AbortController>();
+
+ipcMain.handle('chat:stream', async (_, payload: {
+  streamId: string;
+  providerId: string;
+  model: string;
+  messages: Array<{ role: string; content: string }>;
+  options?: { temperature?: number; top_p?: number; max_tokens?: number; num_ctx?: number };
+  messageId?: string;
+  conversationId?: string;
+}) => {
+  const { streamId, providerId, model, messages, options, messageId, conversationId } = payload;
+  const abortController = new AbortController();
+  activeStreams.set(streamId, abortController);
+
+  const registry = getProviderRegistry();
+  const startTime = Date.now();
+
+  (async () => {
+    try {
+      for await (const chunk of registry.chatStream(
+        providerId,
+        model,
+        messages.map(m => ({ role: m.role as 'system' | 'user' | 'assistant', content: m.content })),
+        options,
+        abortController.signal
+      )) {
+        const windows = BrowserWindow.getAllWindows();
+        for (const w of windows) {
+          if (!w.isDestroyed()) {
+            w.webContents.send('chat:chunk', {
+              streamId,
+              content: chunk.content,
+              done: chunk.done,
+              model: chunk.model,
+              usage: chunk.usage,
+            });
+          }
+        }
+
+        if (chunk.done && chunk.usage && messageId && conversationId) {
+          try {
+            const tracker = getUsageTracker();
+            tracker.record({
+              messageId,
+              conversationId,
+              providerId,
+              model,
+              promptTokens: chunk.usage.prompt_tokens,
+              completionTokens: chunk.usage.completion_tokens,
+              totalTokens: chunk.usage.total_tokens,
+              durationMs: Date.now() - startTime,
+              timestamp: Date.now(),
+            });
+          } catch (err) {
+            console.warn('[Main] Failed to record usage:', err);
+          }
+        }
+        if (chunk.done) break;
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
+      const windows = BrowserWindow.getAllWindows();
+      for (const w of windows) {
+        if (!w.isDestroyed()) {
+          w.webContents.send('chat:error', { streamId, error: err.message || String(err) });
+        }
+      }
+    } finally {
+      activeStreams.delete(streamId);
+    }
+  })();
+
+  return { streamId };
+});
+
+ipcMain.handle('chat:complete', async (_, payload: {
+  providerId: string;
+  model: string;
+  messages: Array<{ role: string; content: string }>;
+  options?: { temperature?: number; top_p?: number; max_tokens?: number; num_ctx?: number };
+  feature?: string;
+}) => {
+  const { providerId, model, messages, options, feature } = payload;
+  const registry = getProviderRegistry();
+  const startTime = Date.now();
+
+  let fullContent = '';
+  let usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | undefined;
+
+  try {
+    for await (const chunk of registry.chatStream(
+      providerId,
+      model,
+      messages.map(m => ({ role: m.role as 'system' | 'user' | 'assistant', content: m.content })),
+      options
+    )) {
+      if (chunk.content) fullContent += chunk.content;
+      if (chunk.done && chunk.usage) usage = chunk.usage;
+    }
+
+    const durationMs = Date.now() - startTime;
+
+    if (usage) {
+      try {
+        const tracker = getUsageTracker();
+        tracker.record({
+          messageId: `${feature || 'tool'}:${Date.now()}`,
+          conversationId: `${feature || 'tool'}:session`,
+          providerId,
+          model,
+          promptTokens: usage.prompt_tokens,
+          completionTokens: usage.completion_tokens,
+          totalTokens: usage.total_tokens,
+          durationMs,
+          timestamp: Date.now(),
+        });
+      } catch (err) {
+        console.warn('[Main] Failed to record usage for chat:complete:', err);
+      }
+    }
+
+    return { content: fullContent, model, usage, durationMs };
+  } catch (err: any) {
+    throw new Error(err.message || String(err));
+  }
+});
+
+ipcMain.on('chat:abort', (_, streamId: string) => {
+  const controller = activeStreams.get(streamId);
+  if (controller) {
+    controller.abort();
+    activeStreams.delete(streamId);
+  }
+});
+
+// ─── Multi-Model Comparison Streaming ────────────────────────────────────────
+
+ipcMain.handle('compare:stream', async (_, payload: {
+  comparisonId: string;
+  models: Array<{ providerId: string; model: string }>;
+  messages: Array<{ role: string; content: string }>;
+  options?: { temperature?: number; top_p?: number; max_tokens?: number };
+}) => {
+  const { comparisonId, models, messages, options } = payload;
+  const registry = getProviderRegistry();
+  const controllers: AbortController[] = [];
+
+  for (const entry of models) {
+    const controller = new AbortController();
+    controllers.push(controller);
+    const streamKey = `${comparisonId}:${entry.providerId}:${entry.model}`;
+    activeStreams.set(streamKey, controller);
+
+    // Each model streams independently in parallel
+    (async () => {
+      const startTime = Date.now();
+      try {
+        for await (const chunk of registry.chatStream(
+          entry.providerId,
+          entry.model,
+          messages.map(m => ({ role: m.role as 'system' | 'user' | 'assistant', content: m.content })),
+          options,
+          controller.signal
+        )) {
+          const windows = BrowserWindow.getAllWindows();
+          for (const w of windows) {
+            if (!w.isDestroyed()) {
+              w.webContents.send('compare:chunk', {
+                comparisonId,
+                providerId: entry.providerId,
+                model: entry.model,
+                content: chunk.content,
+                done: chunk.done,
+                usage: chunk.usage,
+                durationMs: Date.now() - startTime,
+              });
+            }
+          }
+          if (chunk.done) break;
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+        const windows = BrowserWindow.getAllWindows();
+        for (const w of windows) {
+          if (!w.isDestroyed()) {
+            w.webContents.send('compare:error', {
+              comparisonId,
+              providerId: entry.providerId,
+              model: entry.model,
+              error: err.message || String(err),
+            });
+          }
+        }
+      } finally {
+        activeStreams.delete(streamKey);
+      }
+    })();
+  }
+
+  return { comparisonId, modelCount: models.length };
+});
+
+ipcMain.on('compare:abort', (_, comparisonId: string) => {
+  for (const [key, controller] of activeStreams.entries()) {
+    if (key.startsWith(`${comparisonId}:`)) {
+      controller.abort();
+      activeStreams.delete(key);
+    }
+  }
+});
+
+// ─── Usage Tracking IPC Handlers ─────────────────────────────────────────────
+
+ipcMain.handle('usage:getSummary', async (_, { from, to }: { from?: number; to?: number }) => {
+  const tracker = getUsageTracker();
+  return tracker.getSummary(from, to);
+});
+
+ipcMain.handle('usage:getByModel', async (_, { from, to }: { from?: number; to?: number }) => {
+  const tracker = getUsageTracker();
+  return tracker.getByModel(from, to);
+});
+
+ipcMain.handle('usage:getByDay', async (_, { days }: { days?: number }) => {
+  const tracker = getUsageTracker();
+  return tracker.getByDay(days);
+});
+
+ipcMain.handle('usage:getByMessage', async (_, { messageId }: { messageId: string }) => {
+  const tracker = getUsageTracker();
+  return tracker.getByMessage(messageId);
+});
+
+ipcMain.handle('usage:getRecent', async (_, { limit }: { limit?: number }) => {
+  const tracker = getUsageTracker();
+  return tracker.getRecentUsage(limit);
+});
+
+ipcMain.handle('usage:getPricing', async () => {
+  const tracker = getUsageTracker();
+  return {
+    builtin: tracker.getBuiltinPricing(),
+    custom: tracker.getCustomPricing(),
+  };
+});
+
+ipcMain.handle('usage:setCustomPricing', async (_, pricing: { providerId: string; model: string; inputPricePerMToken: number; outputPricePerMToken: number }) => {
+  const tracker = getUsageTracker();
+  tracker.setCustomPricing(pricing);
+  return { success: true };
+});
+
+// ─── Long-Term Memory IPC Handlers ───────────────────────────────────────────
+
+ipcMain.handle('memory:add', async (_, fact: { category: string; content: string; source?: string; confidence?: number; importance?: number }) => {
+  const memory = getLongTermMemory();
+  return memory.addFact({
+    category: fact.category as any,
+    content: fact.content,
+    source: fact.source || 'user',
+    confidence: fact.confidence || 1.0,
+    importance: fact.importance || 1.0,
+    createdAt: Date.now(),
+  });
+});
+
+ipcMain.handle('memory:recall', async (_, { query, limit }: { query: string; limit?: number }) => {
+  const memory = getLongTermMemory();
+  return memory.recall(query, limit);
+});
+
+ipcMain.handle('memory:getAll', async () => {
+  const memory = getLongTermMemory();
+  return memory.getAll();
+});
+
+ipcMain.handle('memory:getByCategory', async (_, { category }: { category: string }) => {
+  const memory = getLongTermMemory();
+  return memory.getByCategory(category);
+});
+
+ipcMain.handle('memory:delete', async (_, { id }: { id: number }) => {
+  const memory = getLongTermMemory();
+  memory.deleteFact(id);
+  return { success: true };
+});
+
+ipcMain.handle('memory:update', async (_, { id, updates }: { id: number; updates: { content?: string; category?: string; importance?: number } }) => {
+  const memory = getLongTermMemory();
+  memory.updateFact(id, updates);
+  return { success: true };
+});
+
+ipcMain.handle('memory:getCount', async () => {
+  const memory = getLongTermMemory();
+  return memory.getCount();
+});
+
+ipcMain.handle('memory:buildContext', async (_, { query }: { query: string }) => {
+  const memory = getLongTermMemory();
+  const facts = await memory.recall(query, 8);
+  const personalityPrompt = memory.buildPersonalityPrompt();
+  const memoryBlock = memory.buildContextBlock(facts);
+  return personalityPrompt + memoryBlock;
+});
+
+ipcMain.handle('memory:applyDecay', async () => {
+  const memory = getLongTermMemory();
+  return memory.applyDecay();
+});
+
+ipcMain.handle('memory:export', async () => {
+  const memory = getLongTermMemory();
+  return memory.exportAll();
+});
+
+ipcMain.handle('memory:import', async (_, { json }: { json: string }) => {
+  const memory = getLongTermMemory();
+  return memory.importData(json);
+});
+
+ipcMain.handle('memory:getExtractionPrompt', async (_, { conversationText }: { conversationText: string }) => {
+  const memory = getLongTermMemory();
+  return memory.getExtractionPrompt(conversationText);
+});
+
+// ─── User Profile & Personality IPC ──────────────────────────────────────────
+
+ipcMain.handle('profile:get', async () => {
+  const memory = getLongTermMemory();
+  return memory.getProfile();
+});
+
+ipcMain.handle('profile:update', async (_, updates: Record<string, any>) => {
+  const memory = getLongTermMemory();
+  memory.updateProfile(updates);
+  return { success: true };
+});
+
+ipcMain.handle('profile:getPersonalityModes', async () => {
+  const memory = getLongTermMemory();
+  return memory.getPersonalityModes();
+});
+
+ipcMain.handle('profile:getPersonalityPrompt', async () => {
+  const memory = getLongTermMemory();
+  return memory.buildPersonalityPrompt();
 });

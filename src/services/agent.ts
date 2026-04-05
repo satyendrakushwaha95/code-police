@@ -1,4 +1,5 @@
 import type { AppSettings } from '../types/settings';
+import { ollamaService } from './ollama';
 
 export interface AgentStep {
   id: string;
@@ -247,15 +248,13 @@ export class AgentService {
   } | null> {
     const context = this.buildContext(task, workspacePath);
     
-    const response = await fetch(`${this.settings.endpoint.replace(/\/$/, '')}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: this.settings.model,
-        messages: [
-          {
-            role: 'system',
-            content: `You are an autonomous coding agent. Your job is to break down a user goal into steps and execute them using tools.
+    const result = await ollamaService.chatComplete(
+      'ollama-default',
+      this.settings.model,
+      [
+        {
+          role: 'system',
+          content: `You are an autonomous coding agent. Your job is to break down a user goal into steps and execute them using tools.
 
 AVAILABLE TOOLS:
 ${TOOLS_JSON}
@@ -281,22 +280,17 @@ Or if complete:
 }
 
 Current workspace: ${workspacePath || 'Not specified'}`
-          },
-          {
-            role: 'user',
-            content: context
-          }
-        ],
-        stream: false
-      })
-    });
+        },
+        {
+          role: 'user',
+          content: context
+        }
+      ],
+      undefined,
+      'agent_action'
+    );
 
-    if (!response.ok) {
-      throw new Error(`Failed to get action: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    const content = data.message?.content || '';
+    const content = result.content;
 
     try {
       // Try to extract JSON from response
@@ -383,32 +377,29 @@ Current workspace: ${workspacePath || 'Not specified'}`
   private async shouldContinue(task: AgentTask, lastResult: { success: boolean; output?: string; error?: string }): Promise<boolean> {
     const context = this.buildContext(task);
     
-    const response = await fetch(`${this.settings.endpoint.replace(/\/$/, '')}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: this.settings.model,
-        messages: [
-          {
-            role: 'system',
-            content: `You are a task completion checker. Based on the last tool execution result, determine if the task goal has been achieved.
+    const result = await ollamaService.chatComplete(
+      'ollama-default',
+      this.settings.model,
+      [
+        {
+          role: 'system',
+          content: `You are a task completion checker. Based on the last tool execution result, determine if the task goal has been achieved.
 
 Context:
 ${context}
 
 Respond with ONLY "YES" if more steps are needed, or "NO" if the task is complete.`
-          },
-          {
-            role: 'user',
-            content: `Task Goal: ${task.goal}\nLast Result: ${lastResult.output || lastResult.error || 'No output'}\n\nShould we continue? (YES/NO)`
-          }
-        ],
-        stream: false
-      })
-    });
+        },
+        {
+          role: 'user',
+          content: `Task Goal: ${task.goal}\nLast Result: ${lastResult.output || lastResult.error || 'No output'}\n\nShould we continue? (YES/NO)`
+        }
+      ],
+      undefined,
+      'agent_check'
+    );
 
-    const data = await response.json();
-    const content = (data.message?.content || '').toLowerCase();
+    const content = result.content.toLowerCase();
     
     return !content.includes('no') && !content.includes('done') && !content.includes('complete');
   }

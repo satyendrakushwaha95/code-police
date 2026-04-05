@@ -100,29 +100,23 @@ Use professional formatting with markdown.`;
       ];
 
       let model = settings.model;
+      let providerId = 'ollama-default';
       try {
         const routing = await ollamaService.resolveModel(messages, undefined, 'documentation');
         model = routing.resolvedModel;
+        providerId = routing.providerId || 'ollama-default';
       } catch (err) {
         console.warn('Failed to resolve model, using default:', err);
       }
 
-      const response = await fetch(`${settings.endpoint.replace(/\/$/, '')}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          messages,
-          stream: false
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to generate: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      setGeneratedDoc(data.message?.content || 'No response generated');
+      const result = await ollamaService.chatComplete(
+        providerId,
+        model,
+        messages,
+        undefined,
+        'documentation'
+      );
+      setGeneratedDoc(result.content || 'No response generated');
     } catch (err: any) {
       showToast(`Generation failed: ${err.message}`, 'error');
     } finally {

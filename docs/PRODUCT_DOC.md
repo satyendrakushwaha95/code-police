@@ -20,15 +20,18 @@ LocalMind AI is a desktop AI engineering workspace that combines conversational 
 
 ### External Requirements
 
-**Only Ollama is required** - Download from [https://ollama.ai](https://ollama.ai)
+**At least one AI provider is required.** The simplest option is Ollama (local, free):
+
+- **Ollama (Local)** — Download from [https://ollama.ai](https://ollama.ai). Must be running on `http://localhost:11434` (default).
+- **Cloud Providers** — Alternatively (or additionally), configure any supported cloud provider in **Settings → Providers**: OpenAI, Anthropic, Groq, OpenRouter, Together AI, Fireworks AI, or LM Studio.
 
 ```bash
-# After installing Ollama, pull the required models
+# If using Ollama, pull the required models
 ollama pull llama3.2
 ollama pull nomic-embed-text
 ```
 
-Ollama must be running on `http://localhost:11434` (default).
+You can use multiple providers simultaneously — the Model Router and per-feature model selection work across all configured providers.
 
 ## Core Features
 
@@ -57,7 +60,8 @@ The dashboard provides quick access to all features with a developer-first desig
 
 **Chat Input Layout:**
 - **Top row:** Textarea with send button inside
-- **Bottom row:** Attachment button | Model badge (with status) | Chat | Send to Agent buttons
+- **Bottom row:** Attachment button | Model badge (with status) | Compare button | Chat | Send to Agent buttons
+- **Slash command autocomplete:** Type `/` to see a dropdown of available slash commands with descriptions
 - **Agent dropdown:** Shows when Send to Agent is active, displays all available agents
 
 **Send to Agent Mode:**
@@ -248,6 +252,18 @@ Built-in command execution.
 - Per-category model assignment
 - Enable/disable routing per category
 
+**Providers Tab:**
+- Add, edit, delete AI providers (Ollama, OpenAI, Anthropic, Groq, OpenRouter, Together AI, Fireworks AI, LM Studio)
+- Test connection to verify API key and endpoint
+- Enable/disable providers
+- API keys encrypted via `electron.safeStorage`
+- 8 built-in provider presets for quick setup
+
+**Profile & Memory Tab:**
+- **Profile** — Set name, role, timezone, expertise areas, preferred languages
+- **Personality** — Choose from 5 modes (Professional, Casual, Concise, Mentor, Creative) plus custom traits
+- **Memories** — View, edit, and delete stored memories; import/export as JSON
+
 **Default Model Router Configuration:**
 
 The Model Router comes pre-configured with optimized models:
@@ -290,6 +306,202 @@ ollama pull qwen2.5-coder:7b # Code generation
 ollama pull codellama:7b      # Code refactoring
 ollama pull nomic-embed-text  # Embeddings (required)
 ```
+
+### 11. Multi-Provider Support
+
+LocalMind AI supports multiple AI providers beyond Ollama, enabling access to cloud models from OpenAI, Anthropic, Groq, and more.
+
+**Supported Providers:**
+
+| Provider | Type | Endpoint |
+|----------|------|----------|
+| Ollama (Local) | `ollama` | `http://localhost:11434` |
+| OpenAI | `openai_compatible` | `https://api.openai.com/v1` |
+| Anthropic | `anthropic` | `https://api.anthropic.com` |
+| Groq | `openai_compatible` | `https://api.groq.com/openai/v1` |
+| OpenRouter | `openai_compatible` | `https://openrouter.ai/api/v1` |
+| Together AI | `openai_compatible` | `https://api.together.xyz/v1` |
+| Fireworks AI | `openai_compatible` | `https://api.fireworks.ai/inference/v1` |
+| LM Studio (Local) | `openai_compatible` | `http://localhost:1234/v1` |
+
+**Features:**
+- Provider abstraction layer with adapters for Ollama, OpenAI-compatible, and Anthropic APIs
+- Provider Registry manages lifecycle, connection testing, and model listing across all providers
+- Chat streaming goes through IPC (`chat:stream` + `chat:chunk` events) instead of direct HTTP
+- Non-streaming `chat:complete` handler for tool features (code gen, refactor, etc.)
+- API keys encrypted at rest via `electron.safeStorage`
+- Configure providers in **Settings → Providers**
+
+### 12. Multi-Model Comparison
+
+Compare responses from multiple models side-by-side to find the best answer.
+
+**Features:**
+- Send the same prompt to 2–4 models simultaneously
+- Compare overlay panel with streaming responses displayed in columns
+- Rate responses (thumbs up/down) and select the best one
+- "Use This" button to adopt a selected response into the active conversation
+- Works across any combination of providers
+
+**UI Components:**
+- `ComparePanel` — Overlay displaying the comparison grid
+- `CompareModelPicker` — Model selection interface for choosing comparison targets
+- `CompareResponseCard` — Individual response card with rating controls
+
+### 13. Token & Cost Tracking
+
+Automatic usage tracking for every AI call across the entire application.
+
+**What's Tracked:**
+- All chat messages (streaming and non-streaming)
+- Pipeline stages (plan, action, review, validate)
+- Code generation, refactoring, design docs, prompt enhancer
+- Agent service calls
+
+**Pricing:**
+- Built-in pricing for 19+ models: OpenAI (GPT-4o, GPT-4o-mini, o1, o3-mini), Anthropic (Claude Sonnet, Haiku, Opus), Groq (Llama, Mixtral), DeepSeek
+- Local Ollama models tracked as "Free" (cost = $0)
+- Custom pricing support — override or add pricing for any model
+
+**Per-Message Badge:**
+- Assistant messages display a token/cost badge showing: token count, cost (USD), duration, model name
+
+**Usage Dashboard:**
+- Access via **Sidebar → Usage & Costs**
+- Summary cards: total tokens, total cost, request count
+- Daily bar chart: visualize usage over time
+- Per-model breakdown table: tokens, cost, and request count by model
+- Time range filters: Today, 7 Days, 30 Days, All Time
+
+### 14. Natural Language Command Router (Jarvis)
+
+Type naturally in the chat input and commands execute directly — no buttons required.
+
+**How It Works:**
+- User input is intercepted before reaching the LLM
+- Intent detection matches against slash commands and natural language patterns
+- Matched commands execute immediately and display results inline in chat
+- Unmatched input passes through to the LLM as normal chat
+
+**Slash Commands (20+):**
+
+| Command | Description |
+|---------|-------------|
+| `/run <command>` | Execute a terminal command |
+| `$ <command>` | Execute a terminal command (shorthand) |
+| `/git status` | Show git status |
+| `/git log` | Show recent commits |
+| `/git diff` | Show changes |
+| `/git commit <msg>` | Commit all changes |
+| `/search <term>` | Search codebase |
+| `/ls [path]` | List directory contents |
+| `/read <file>` | Read a file |
+| `/gen` | Open code generator |
+| `/refactor` | Open refactor panel |
+| `/doc` | Open design doc generator |
+| `/pipeline` | Open task pipeline |
+| `/compare` | Compare models |
+| `/settings` | Open settings |
+| `/usage` | View usage & costs |
+| `/agents` | Manage agents |
+| `/remember <fact>` | Store a memory |
+| `/recall` | Show all memories |
+| `/new` | New chat |
+
+**Natural Language Examples:**
+- `run npm test` → executes `npm test`
+- `what changed?` → runs `git status`
+- `search useState` → searches codebase for "useState"
+- `commit with message "fix login bug"` → commits with that message
+- `open settings` → opens the settings panel
+- `show usage` → opens the usage dashboard
+
+**Slash Command Autocomplete:**
+- Type `/` in the chat input to see a dropdown of available commands with descriptions
+- Keyboard-navigable list
+
+### 15. Long-Term Memory System
+
+Persistent memory that survives across sessions, allowing the AI to remember facts about you, your preferences, and your projects.
+
+**Memory Categories:**
+
+| Category | Description |
+|----------|-------------|
+| `core` | Fundamental facts about the user (name, role, tech stack) |
+| `preference` | Likes/dislikes, coding style preferences |
+| `decision` | Architectural or technical decisions made |
+| `pattern` | Recurring patterns or conventions observed |
+| `project` | Project-specific facts (framework, structure, APIs) |
+| `correction` | Mistakes the AI made that should be avoided |
+| `general` | Other important facts |
+
+**Recall Scoring:**
+- Composite score: 50% semantic similarity + 20% recency decay + 30% importance
+- Memories are ranked by relevance when recalled
+
+**Memory Decay:**
+- Exponential half-life of 90 days
+- Importance boost on each access (+0.05, capped at 10.0)
+- Memories below 0.1 importance are auto-deleted
+- `core` category memories are exempt from decay
+
+**Memory Consolidation:**
+- Old, low-importance memories can be merged into consolidated summaries
+
+**Auto-Extraction:**
+- After each chat exchange, the LLM extracts important facts in the background
+- Extracted facts are stored automatically with appropriate categories and importance levels
+
+**Commands:**
+- `/remember <fact>` — Store a fact manually
+- `/recall` — View all stored memories
+- Memories are automatically injected into chat context via `memory:buildContext`
+
+**Import/Export:**
+- Export all memories and profile as JSON
+- Import from a previously exported JSON file
+
+### 16. User Profile & Personality Engine
+
+Customize how the AI communicates and what it knows about you.
+
+**User Profile:**
+- Name, role, timezone
+- Expertise areas (e.g., "React", "Kubernetes", "Machine Learning")
+- Preferred programming languages
+
+**Personality Modes:**
+
+| Mode | Description |
+|------|-------------|
+| Professional | Precise, thorough, technically accurate. Direct. |
+| Casual | Friendly, conversational, relaxed. Uses analogies. |
+| Concise | Ultra-short answers. Bullet points. Code-first. |
+| Mentor | Patient, educational. Explains the "why". Guiding questions. |
+| Creative | Inventive, unconventional. Multiple alternatives. |
+
+**Custom Traits:**
+- Overlay additional traits on top of the selected personality mode
+- Free-text field for fine-tuning behavior
+
+**Integration:**
+- Profile and personality are automatically injected into every chat system prompt
+- Configured in **Settings → Profile & Memory**
+
+### 17. Command Palette & Global Hotkey
+
+Quick access to any action from anywhere in the app.
+
+**Command Palette (`Ctrl+K`):**
+- Searchable overlay listing all available actions
+- Actions include: Code Gen, Refactor, Pipeline, Settings, Usage, Compare, and more
+- Search across conversations by title
+- Keyboard-navigable (arrow keys + Enter to select)
+
+**Global Hotkey (`Ctrl+Space`):**
+- System-wide hotkey — summons the app even when minimized or in the background
+- Triggers the `jarvis:summon` IPC event
 
 ## Custom Agents
 
@@ -393,6 +605,7 @@ Custom agents integrate with the task pipeline:
 - **Design Documents** - Open design doc generator
 - **Prompt Enhancer** - Open prompt enhancer
 - **Task Pipeline** - Open pipeline dashboard
+- **Usage & Costs** - Open usage dashboard with token/cost tracking
 - **Settings** - Open settings modal
 
 ### Chat Window
@@ -403,6 +616,8 @@ Custom agents integrate with the task pipeline:
 ### Keyboard Shortcuts
 
 - `Ctrl+N` - New chat
+- `Ctrl+K` - Open command palette
+- `Ctrl+Space` - Global hotkey (summon app from anywhere, even when minimized)
 - `Ctrl+Shift+F` - Toggle file panel
 - `Ctrl+Shift+T` - Toggle terminal
 - `Ctrl+,` - Open settings
@@ -418,14 +633,22 @@ Custom agents integrate with the task pipeline:
 
 ### Backend (Electron)
 - Main process handles:
-  - Ollama API calls
+  - AI provider management (Ollama, OpenAI, Anthropic, etc.)
+  - Chat streaming via IPC
   - File system operations
   - Vector database (LanceDB)
   - Pipeline orchestration
   - Model routing
+  - Usage tracking
+  - Long-term memory
+  - User profile & personality
 
 ### Services
-- **OllamaService** - AI model interactions
+- **ProviderRegistry** - Multi-provider lifecycle, connection testing, model listing, chat streaming
+- **OllamaService** - Ollama-specific API interactions (legacy, embeddings)
 - **VectorDBService** - Semantic search
 - **PipelineOrchestrator** - Agent pipeline execution
-- **ModelRouter** - Task-based model selection
+- **ModelRouter** - Task-based model selection with provider awareness
+- **UsageTracker** - Token counting, cost calculation, usage persistence
+- **LongTermMemory** - Persistent memory, recall scoring, decay, profile management
+- **CommandRouter** - Natural language intent detection and slash command execution

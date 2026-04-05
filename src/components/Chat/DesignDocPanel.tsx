@@ -140,28 +140,26 @@ Tech Stack: ${techStack}`;
       ];
 
       let model = settings.model;
+      let providerId = 'ollama-default';
       try {
         const routing = await ollamaService.resolveModel(messages, undefined, 'documentation');
         model = routing.resolvedModel;
+        providerId = routing.providerId || 'ollama-default';
       } catch (err) {
         console.warn('Failed to resolve model, using default:', err);
       }
 
-      const response = await fetch(`${settings.endpoint.replace(/\/$/, '')}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          stream: false
-        })
-      });
-
-      const data = await response.json();
-      const content = data.message?.content || '';
+      const result = await ollamaService.chatComplete(
+        providerId,
+        model,
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        undefined,
+        'documentation'
+      );
+      const content = result.content;
       
       setGeneratedDoc(content);
       

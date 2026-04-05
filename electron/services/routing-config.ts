@@ -13,6 +13,7 @@ export type TaskCategory =
 
 export interface RouteConfig {
   model: string;
+  providerId: string;
   enabled: boolean;
   fallbackToDefault: boolean;
 }
@@ -20,6 +21,7 @@ export interface RouteConfig {
 export interface RoutingConfig {
   version: number;
   defaultModel: string;
+  defaultProviderId: string;
   routes: Record<TaskCategory, RouteConfig>;
 }
 
@@ -33,15 +35,16 @@ const REQUIRED_CATEGORIES: TaskCategory[] = [
 ];
 
 const DEFAULT_CONFIG: RoutingConfig = {
-  version: 1,
+  version: 2,
   defaultModel: 'qwen3-coder:30b',
+  defaultProviderId: 'ollama-default',
   routes: {
-    code_generation: { model: 'qwen3-coder:480b-cloud', enabled: true, fallbackToDefault: true },
-    code_refactor: { model: 'qwen3-coder:480b-cloud', enabled: true, fallbackToDefault: true },
-    documentation: { model: 'minimax-m2.5:cloud', enabled: true, fallbackToDefault: true },
-    planning: { model: 'deepseek-v3.1:671b-cloud', enabled: true, fallbackToDefault: true },
-    review: { model: 'deepseek-v3.1:671b-cloud', enabled: true, fallbackToDefault: true },
-    chat_general: { model: 'minimax-m2.5:cloud', enabled: true, fallbackToDefault: true }
+    code_generation: { model: 'qwen3-coder:480b-cloud', providerId: 'ollama-default', enabled: true, fallbackToDefault: true },
+    code_refactor: { model: 'qwen3-coder:480b-cloud', providerId: 'ollama-default', enabled: true, fallbackToDefault: true },
+    documentation: { model: 'minimax-m2.5:cloud', providerId: 'ollama-default', enabled: true, fallbackToDefault: true },
+    planning: { model: 'deepseek-v3.1:671b-cloud', providerId: 'ollama-default', enabled: true, fallbackToDefault: true },
+    review: { model: 'deepseek-v3.1:671b-cloud', providerId: 'ollama-default', enabled: true, fallbackToDefault: true },
+    chat_general: { model: 'minimax-m2.5:cloud', providerId: 'ollama-default', enabled: true, fallbackToDefault: true }
   }
 };
 
@@ -110,6 +113,11 @@ export class RoutingConfigStore {
     if (typeof cfg.defaultModel !== 'string' || !cfg.defaultModel) return false;
     if (!cfg.routes || typeof cfg.routes !== 'object') return false;
 
+    // Auto-fill defaultProviderId for legacy configs
+    if (!cfg.defaultProviderId) {
+      (cfg as any).defaultProviderId = 'ollama-default';
+    }
+
     for (const category of REQUIRED_CATEGORIES) {
       if (!(category in cfg.routes)) {
         console.warn(`[RoutingConfigStore] Missing category: ${category}`);
@@ -120,6 +128,11 @@ export class RoutingConfigStore {
       if (typeof route.model !== 'string') return false;
       if (typeof route.enabled !== 'boolean') return false;
       if (typeof route.fallbackToDefault !== 'boolean') return false;
+
+      // Auto-fill providerId for legacy route entries
+      if (!route.providerId) {
+        route.providerId = 'ollama-default';
+      }
     }
 
     const extraKeys = Object.keys(cfg.routes).filter(k => !REQUIRED_CATEGORIES.includes(k as TaskCategory));

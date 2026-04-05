@@ -290,6 +290,7 @@ ${optionalPrompt ? `## Additional Instructions\n${optionalPrompt}` : ''}
 Generate the code following the plan.`;
       
       let model = settings.model;
+      let providerId = 'ollama-default';
       try {
         const routing = await ollamaService.resolveModel(
           [
@@ -300,6 +301,7 @@ Generate the code following the plan.`;
           'code_generation'
         );
         model = routing.resolvedModel;
+        providerId = routing.providerId || 'ollama-default';
         if (routing.usedFallback) {
           showToast(`Using fallback model: ${model}`, 'info');
         }
@@ -307,21 +309,17 @@ Generate the code following the plan.`;
         console.warn('Failed to resolve model, using default:', err);
       }
 
-      const response = await fetch(`${settings.endpoint.replace(/\/$/, '')}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          stream: false
-        })
-      });
-
-      const data = await response.json();
-      const content = data.message?.content || '';
+      const result = await ollamaService.chatComplete(
+        providerId,
+        model,
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        undefined,
+        'code_generation'
+      );
+      const content = result.content;
       
       const codeMatch = content.match(/---CODE---\n([\s\S]*?)---TESTS---/);
       const testsMatch = content.match(/---TESTS---\n([\s\S]*?)---EXPLANATION---/);

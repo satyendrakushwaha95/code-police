@@ -10,6 +10,7 @@ export type TaskCategory =
 
 export interface RouteConfig {
   model: string;
+  providerId: string;
   enabled: boolean;
   fallbackToDefault: boolean;
 }
@@ -17,6 +18,7 @@ export interface RouteConfig {
 export interface RoutingConfig {
   version: number;
   defaultModel: string;
+  defaultProviderId: string;
   routes: Record<TaskCategory, RouteConfig>;
 }
 

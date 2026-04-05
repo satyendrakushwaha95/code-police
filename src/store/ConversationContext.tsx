@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useReducer, useEffect, type ReactNode } from 'react';
-import type { Conversation, Message, FileAttachment } from '../types/chat';
+import type { Conversation, Message, FileAttachment, MessageUsage } from '../types/chat';
 import { loadFromDatabase, saveConversation, saveMessage, deleteConversationFromDb, deleteMessageFromDb, saveAttachment } from '../services/database';
 import { v4 as uuidv4 } from 'uuid';
 import { generateTitle } from '../utils/helpers';
@@ -15,7 +15,7 @@ type ConversationAction =
   | { type: 'RENAME_CONVERSATION'; payload: { id: string; title: string } }
   | { type: 'SET_ACTIVE'; payload: string | null }
   | { type: 'ADD_MESSAGE'; payload: { conversationId: string; message: Message } }
-  | { type: 'UPDATE_MESSAGE'; payload: { conversationId: string; messageId: string; content?: string; isStreaming?: boolean; pipelineStatus?: 'starting' | 'running' | 'complete' | 'failed' | 'cancelled'; pipelineRunId?: string } }
+  | { type: 'UPDATE_MESSAGE'; payload: { conversationId: string; messageId: string; content?: string; isStreaming?: boolean; pipelineStatus?: 'starting' | 'running' | 'complete' | 'failed' | 'cancelled'; pipelineRunId?: string; usage?: MessageUsage } }
   | { type: 'DELETE_MESSAGE'; payload: { conversationId: string; messageId: string } }
   | { type: 'ADD_ATTACHMENTS'; payload: { conversationId: string; attachments: FileAttachment[] } }
   | { type: 'REMOVE_ATTACHMENT'; payload: { conversationId: string; attachmentId: string } }
@@ -94,6 +94,7 @@ function conversationReducer(state: ConversationState, action: ConversationActio
                     isStreaming: action.payload.isStreaming ?? m.isStreaming,
                     pipelineStatus: action.payload.pipelineStatus ?? m.pipelineStatus,
                     pipelineRunId: action.payload.pipelineRunId ?? m.pipelineRunId,
+                    usage: action.payload.usage ?? m.usage,
                   }
                 : m
             ),

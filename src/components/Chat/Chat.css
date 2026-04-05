@@ -1931,6 +1931,52 @@
 }
 
 /* Message Actions */
+/* Usage bar on assistant messages */
+.message-usage-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.usage-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.usage-chip svg {
+  flex-shrink: 0;
+}
+
+.usage-chip.cost {
+  color: var(--accent);
+  background: var(--accent-glow);
+}
+
+.usage-chip.free {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.usage-chip.model {
+  font-family: monospace;
+  font-size: 10px;
+  letter-spacing: -0.2px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .message-actions {
   display: flex;
   gap: 4px;
@@ -2629,8 +2675,43 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  direction: rtl; /* Truncates the start of long paths instead of the end */
+  direction: rtl;
   text-align: left;
+}
+
+/* Slash command dropdown */
+.slash-dropdown {
+  max-height: 280px;
+  min-width: 340px;
+}
+
+.slash-dropdown .mention-item {
+  justify-content: space-between;
+}
+
+.slash-cmd {
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.slash-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mention-item.active .slash-cmd {
+  color: var(--accent);
+}
+
+.mention-item.active .slash-desc {
+  color: var(--text-secondary);
 }
 
 /* Responsive */

@@ -398,3 +398,227 @@
 .routing-settings.embedded .settings-description {
   display: none;
 }
+
+/* ─── Provider Settings ────────────────────────────────────────────────────── */
+
+.provider-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.provider-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  background: var(--bg-secondary);
+  transition: opacity var(--transition-fast);
+}
+
+.provider-card.disabled {
+  opacity: 0.5;
+}
+
+.provider-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.provider-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.provider-type-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  letter-spacing: 0.3px;
+}
+
+.provider-name {
+  font-weight: 500;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.provider-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.provider-endpoint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 6px;
+  font-family: monospace;
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.btn-danger {
+  background: var(--error);
+  color: white;
+  border: none;
+}
+
+.btn-danger:hover {
+  opacity: 0.9;
+}
+
+.toggle-sm {
+  width: 36px;
+  height: 20px;
+}
+
+.toggle-sm .toggle-slider:before {
+  height: 14px;
+  width: 14px;
+}
+
+.toggle-sm input:checked + .toggle-slider:before {
+  transform: translateX(16px);
+}
+
+.provider-edit-form {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.provider-edit-form .form-group {
+  margin-bottom: 0;
+}
+
+.provider-add-form {
+  border: 1px dashed var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.provider-add-form h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.add-provider-btn {
+  align-self: flex-start;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* ─── Profile & Memory Settings ────────────────────────────────────────────── */
+
+.profile-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.profile-section-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.profile-tab {
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all var(--transition-fast);
+}
+
+.profile-tab:hover { color: var(--text-primary); }
+.profile-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.profile-form { display: flex; flex-direction: column; gap: 14px; }
+
+/* Tags */
+.tag-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 12px; font-size: 12px;
+  background: var(--accent-glow); color: var(--accent); font-weight: 500;
+}
+.tag-remove {
+  background: none; border: none; color: var(--accent); cursor: pointer;
+  font-size: 12px; padding: 0 2px; opacity: 0.6;
+}
+.tag-remove:hover { opacity: 1; }
+.tag-input-row { flex: 1; min-width: 120px; }
+.tag-input-row input { width: 100%; padding: 4px 8px; font-size: 12px; border: 1px dashed var(--border); border-radius: 12px; background: transparent; color: var(--text-primary); }
+.tag-input-row input:focus { border-color: var(--accent); outline: none; }
+
+/* Personality cards */
+.personality-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
+.personality-card {
+  display: flex; flex-direction: column; gap: 4px; padding: 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-secondary); cursor: pointer; text-align: left;
+  transition: all var(--transition-fast);
+}
+.personality-card:hover { border-color: var(--accent); background: var(--bg-hover); }
+.personality-card.active { border-color: var(--accent); background: var(--accent-glow); }
+.personality-label { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.personality-desc { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+.personality-card.active .personality-label { color: var(--accent); }
+
+/* Memory list */
+.memories-actions-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+.memory-list { display: flex; flex-direction: column; gap: 8px; max-height: 400px; overflow-y: auto; }
+.memory-item {
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+.memory-item-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.memory-category-badge {
+  font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 4px;
+  letter-spacing: 0.3px;
+}
+.memory-importance { font-size: 11px; color: var(--text-muted); flex: 1; }
+.memory-item-actions { display: flex; gap: 4px; }
+.memory-content { font-size: 13px; color: var(--text-primary); margin: 0; line-height: 1.5; }
+.memory-meta {
+  display: flex; gap: 12px; margin-top: 6px; font-size: 10px; color: var(--text-muted);
+}
+.memory-edit { display: flex; flex-direction: column; gap: 8px; }
+.memory-edit textarea {
+  width: 100%; padding: 8px; font-size: 13px; border: 1px solid var(--border);
+  border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-primary);
+  resize: vertical; box-sizing: border-box;
+}

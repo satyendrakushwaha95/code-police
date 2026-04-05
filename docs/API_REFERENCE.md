@@ -55,6 +55,535 @@ Test Ollama connection.
 boolean
 ```
 
+### Provider Management
+
+#### `provider:list`
+
+List all configured providers (API keys are masked).
+
+**Response:**
+```typescript
+ProviderConfig[]  // apiKey field is masked as "••••" for security
+```
+
+#### `provider:add`
+
+Add a new provider configuration.
+
+**Request:**
+```typescript
+{
+  type: 'ollama' | 'openai_compatible' | 'anthropic';
+  name: string;
+  enabled: boolean;
+  endpoint: string;
+  apiKey: string | null;
+  headers?: Record<string, string>;
+}
+```
+
+**Response:**
+```typescript
+ProviderConfig
+```
+
+#### `provider:update`
+
+Update an existing provider.
+
+**Request:**
+```typescript
+{
+  id: string;
+  updates: Partial<Omit<ProviderConfig, 'id' | 'createdAt'>>;
+}
+```
+
+**Response:**
+```typescript
+ProviderConfig
+```
+
+#### `provider:remove`
+
+Remove a provider.
+
+**Request:**
+```typescript
+string  // Provider ID
+```
+
+**Response:**
+```typescript
+{ success: boolean }
+```
+
+#### `provider:test`
+
+Test connection to a provider.
+
+**Request:**
+```typescript
+string  // Provider ID
+```
+
+**Response:**
+```typescript
+boolean
+```
+
+#### `provider:listModels`
+
+List available models for a specific provider.
+
+**Request:**
+```typescript
+string  // Provider ID
+```
+
+**Response:**
+```typescript
+ProviderModel[]
+```
+
+#### `provider:listAllModels`
+
+List models across all enabled providers.
+
+**Response:**
+```typescript
+ProviderModel[]
+```
+
+#### `provider:getPresets`
+
+Get built-in provider presets.
+
+**Response:**
+```typescript
+Record<string, Omit<ProviderConfig, 'id' | 'createdAt' | 'updatedAt'>>
+```
+
+### Chat Streaming
+
+#### `chat:stream`
+
+Start a streaming chat via the Provider Registry.
+
+**Request:**
+```typescript
+{
+  providerId: string;
+  model: string;
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+  options?: {
+    temperature?: number;
+    top_p?: number;
+    max_tokens?: number;
+    num_ctx?: number;
+  };
+  conversationId?: string;
+  messageId?: string;
+}
+```
+
+**Response:**
+```typescript
+{
+  streamId: string;
+}
+```
+
+Streaming chunks are emitted via the `chat:chunk` event (see Event Emitters).
+
+#### `chat:abort`
+
+Abort an active chat stream.
+
+**Request:**
+```typescript
+string  // streamId
+```
+
+#### `chat:complete`
+
+Non-streaming chat completion. Used internally by tool features (code gen, refactor, design docs, prompt enhancer) and records usage automatically.
+
+**Request:**
+```typescript
+{
+  providerId: string;
+  model: string;
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
+  options?: {
+    temperature?: number;
+    top_p?: number;
+    max_tokens?: number;
+    num_ctx?: number;
+  };
+  conversationId?: string;
+  messageId?: string;
+}
+```
+
+**Response:**
+```typescript
+{
+  content: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+  durationMs: number;
+}
+```
+
+### Compare
+
+#### `compare:stream`
+
+Start a multi-model comparison. Sends the same prompt to 2–4 models simultaneously.
+
+**Request:**
+```typescript
+{
+  comparisonId: string;
+  models: Array<{ providerId: string; model: string }>;
+  messages: Array<{ role: string; content: string }>;
+  options?: {
+    temperature?: number;
+    top_p?: number;
+    max_tokens?: number;
+  };
+}
+```
+
+Streaming chunks are emitted per-model via `compare:chunk` events (see Event Emitters).
+
+#### `compare:abort`
+
+Abort an active comparison.
+
+**Request:**
+```typescript
+string  // comparisonId
+```
+
+### Usage Tracking
+
+#### `usage:getSummary`
+
+Get aggregated usage summary.
+
+**Request:**
+```typescript
+{
+  fromTimestamp?: number;  // Unix ms, defaults to 0 (all time)
+  toTimestamp?: number;    // Unix ms, defaults to now
+}
+```
+
+**Response:**
+```typescript
+UsageSummary
+```
+
+#### `usage:getByModel`
+
+Get usage broken down by provider and model.
+
+**Request:**
+```typescript
+{
+  fromTimestamp?: number;
+  toTimestamp?: number;
+}
+```
+
+**Response:**
+```typescript
+UsageByModel[]
+```
+
+#### `usage:getByDay`
+
+Get daily usage aggregates.
+
+**Request:**
+```typescript
+{
+  days?: number;  // defaults to 30
+}
+```
+
+**Response:**
+```typescript
+UsageByDay[]
+```
+
+#### `usage:getByMessage`
+
+Get usage for a specific message.
+
+**Request:**
+```typescript
+string  // messageId
+```
+
+**Response:**
+```typescript
+UsageRecord | undefined
+```
+
+#### `usage:getRecent`
+
+Get recent usage records.
+
+**Request:**
+```typescript
+{
+  limit?: number;  // defaults to 50
+}
+```
+
+**Response:**
+```typescript
+UsageRecord[]
+```
+
+#### `usage:getPricing`
+
+Get all pricing data (built-in + custom).
+
+**Response:**
+```typescript
+{
+  builtin: ModelPricing[];
+  custom: ModelPricing[];
+}
+```
+
+#### `usage:setCustomPricing`
+
+Set custom pricing for a provider/model pair.
+
+**Request:**
+```typescript
+{
+  providerId: string;
+  model: string;
+  inputPricePerMToken: number;
+  outputPricePerMToken: number;
+}
+```
+
+### Memory
+
+#### `memory:add`
+
+Add a new memory fact.
+
+**Request:**
+```typescript
+{
+  category: MemoryCategory;  // 'core' | 'preference' | 'decision' | 'pattern' | 'project' | 'correction' | 'general'
+  content: string;
+  source: string;             // 'user', 'auto-extraction', 'import', etc.
+  confidence: number;         // 0.0 – 1.0
+  importance?: number;        // defaults to 1.0 (core defaults to 5.0)
+}
+```
+
+**Response:**
+```typescript
+MemoryFact
+```
+
+#### `memory:recall`
+
+Semantic recall with composite scoring.
+
+**Request:**
+```typescript
+{
+  query: string;
+  limit?: number;  // defaults to 5
+}
+```
+
+**Response:**
+```typescript
+MemoryFact[]  // sorted by composite score (similarity + recency + importance)
+```
+
+#### `memory:getAll`
+
+Get all stored memories ordered by importance then recency.
+
+**Response:**
+```typescript
+MemoryFact[]
+```
+
+#### `memory:getByCategory`
+
+Get memories filtered by category.
+
+**Request:**
+```typescript
+string  // category
+```
+
+**Response:**
+```typescript
+MemoryFact[]
+```
+
+#### `memory:delete`
+
+Delete a memory by ID.
+
+**Request:**
+```typescript
+number  // memory ID
+```
+
+#### `memory:update`
+
+Update a memory's content, category, or importance.
+
+**Request:**
+```typescript
+{
+  id: number;
+  updates: {
+    content?: string;
+    category?: string;
+    importance?: number;
+  };
+}
+```
+
+#### `memory:getCount`
+
+Get total number of stored memories.
+
+**Response:**
+```typescript
+number
+```
+
+#### `memory:buildContext`
+
+Build a formatted memory context block for injection into chat prompts.
+
+**Request:**
+```typescript
+{
+  query: string;
+  limit?: number;
+}
+```
+
+**Response:**
+```typescript
+string  // Formatted block: "[MEMORY — What I know about you...] ... [END MEMORY]"
+```
+
+#### `memory:applyDecay`
+
+Apply exponential decay to all non-core memories. Deletes memories that fall below the importance threshold.
+
+**Response:**
+```typescript
+{
+  decayed: number;   // memories with reduced importance
+  deleted: number;   // memories removed
+}
+```
+
+#### `memory:export`
+
+Export all memories and user profile as JSON.
+
+**Response:**
+```typescript
+string  // JSON string with { version, profile, memories }
+```
+
+#### `memory:import`
+
+Import memories and profile from JSON.
+
+**Request:**
+```typescript
+string  // JSON string
+```
+
+**Response:**
+```typescript
+{
+  memoriesImported: number;
+}
+```
+
+#### `memory:getExtractionPrompt`
+
+Get the LLM prompt template for auto-extracting facts from a conversation.
+
+**Request:**
+```typescript
+string  // conversation text
+```
+
+**Response:**
+```typescript
+string  // prompt for the LLM
+```
+
+### Profile
+
+#### `profile:get`
+
+Get user profile.
+
+**Response:**
+```typescript
+UserProfile
+```
+
+#### `profile:update`
+
+Update user profile fields.
+
+**Request:**
+```typescript
+Partial<UserProfile>
+```
+
+#### `profile:getPersonalityModes`
+
+Get available personality modes with labels and descriptions.
+
+**Response:**
+```typescript
+Array<{
+  id: PersonalityMode;
+  label: string;
+  description: string;
+}>
+```
+
+#### `profile:getPersonalityPrompt`
+
+Build the full personality system prompt from current profile and personality mode.
+
+**Response:**
+```typescript
+string
+```
+
 ### Pipeline
 
 #### `pipeline:run`
@@ -198,6 +727,7 @@ Get model routing configuration.
 ```typescript
 {
   model: string;
+  providerId: string;
   enabled: boolean;
   fallbackToDefault: boolean;
 }
@@ -211,6 +741,16 @@ Get model routing configuration.
 | 'documentation'
 | 'planning'
 | 'review'
+```
+
+**RoutingConfig:**
+```typescript
+{
+  version: number;
+  defaultModel: string;
+  defaultProviderId: string;
+  routes: Record<TaskCategory, RouteConfig>;
+}
 ```
 
 #### `routing:updateConfig`
@@ -411,6 +951,76 @@ Emitted when a pipeline stage updates.
 }
 ```
 
+### chat:chunk
+
+Emitted during `chat:stream` with each token chunk.
+
+```typescript
+{
+  streamId: string;
+  content: string;
+  done: boolean;
+  model?: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+```
+
+### chat:error
+
+Emitted when `chat:stream` encounters an error.
+
+```typescript
+{
+  streamId: string;
+  error: string;
+}
+```
+
+### compare:chunk
+
+Emitted per-model during `compare:stream` with each token chunk.
+
+```typescript
+{
+  comparisonId: string;
+  providerId: string;
+  model: string;
+  content: string;
+  done: boolean;
+  durationMs: number;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+```
+
+### compare:error
+
+Emitted when a model in a comparison encounters an error.
+
+```typescript
+{
+  comparisonId: string;
+  providerId: string;
+  model: string;
+  error: string;
+}
+```
+
+### jarvis:summon
+
+Emitted when the global hotkey (`Ctrl+Space`) is pressed. Brings the app to the foreground and focuses the chat input.
+
+```typescript
+void
+```
+
 ## Types
 
 ### Message
@@ -418,7 +1028,7 @@ Emitted when a pipeline stage updates.
 ```typescript
 interface Message {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: 'system' | 'user' | 'assistant';
   content: string;
   timestamp: number;
   isStreaming?: boolean;
@@ -426,6 +1036,21 @@ interface Message {
   isPipeline?: boolean;
   pipelineStatus?: 'starting' | 'running' | 'complete' | 'failed' | 'cancelled';
   pipelineRunId?: string;
+  usage?: MessageUsage;
+}
+```
+
+### MessageUsage
+
+```typescript
+interface MessageUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  durationMs: number;
+  model?: string;
+  providerId?: string;
 }
 ```
 
@@ -749,3 +1374,202 @@ Each agent can configure which pipeline stages to use:
 | Review | Review generated code for issues |
 | Validate | Validate against acceptance criteria |
 | Execute | Apply file changes to project |
+
+---
+
+## Provider Types
+
+### ProviderConfig
+
+```typescript
+interface ProviderConfig {
+  id: string;
+  type: 'ollama' | 'openai_compatible' | 'anthropic';
+  name: string;
+  enabled: boolean;
+  endpoint: string;
+  apiKey: string | null;
+  headers?: Record<string, string>;
+  createdAt: number;
+  updatedAt: number;
+}
+```
+
+### ProviderModel
+
+```typescript
+interface ProviderModel {
+  id: string;
+  name: string;
+  providerId: string;
+  providerName: string;
+  size?: number;
+  contextLength?: number;
+}
+```
+
+### ChatStreamChunk
+
+```typescript
+interface ChatStreamChunk {
+  content: string;
+  done: boolean;
+  model?: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+  };
+}
+```
+
+---
+
+## Usage Types
+
+### UsageRecord
+
+```typescript
+interface UsageRecord {
+  id?: number;
+  messageId: string;
+  conversationId: string;
+  providerId: string;
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  durationMs: number;
+  timestamp: number;
+}
+```
+
+### UsageSummary
+
+```typescript
+interface UsageSummary {
+  totalTokens: number;
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalCostUsd: number;
+  requestCount: number;
+}
+```
+
+### UsageByModel
+
+```typescript
+interface UsageByModel {
+  providerId: string;
+  model: string;
+  totalTokens: number;
+  promptTokens: number;
+  completionTokens: number;
+  costUsd: number;
+  requestCount: number;
+}
+```
+
+### UsageByDay
+
+```typescript
+interface UsageByDay {
+  date: string;
+  totalTokens: number;
+  costUsd: number;
+  requestCount: number;
+}
+```
+
+### ModelPricing
+
+```typescript
+interface ModelPricing {
+  providerId: string;
+  model: string;
+  inputPricePerMToken: number;
+  outputPricePerMToken: number;
+}
+```
+
+---
+
+## Memory Types
+
+### MemoryFact
+
+```typescript
+interface MemoryFact {
+  id?: number;
+  category: MemoryCategory;
+  content: string;
+  source: string;
+  confidence: number;
+  importance: number;
+  createdAt: number;
+  lastAccessedAt: number;
+  accessCount: number;
+}
+```
+
+### MemoryCategory
+
+```typescript
+type MemoryCategory = 'preference' | 'decision' | 'pattern' | 'project' | 'correction' | 'general' | 'core';
+```
+
+---
+
+## Profile Types
+
+### UserProfile
+
+```typescript
+interface UserProfile {
+  name: string;
+  role: string;
+  timezone: string;
+  expertiseAreas: string[];
+  preferredLanguages: string[];
+  personalityMode: PersonalityMode;
+  customTraits: string;
+}
+```
+
+### PersonalityMode
+
+```typescript
+type PersonalityMode = 'professional' | 'casual' | 'concise' | 'mentor' | 'creative';
+```
+
+---
+
+## Command Router Types
+
+### CommandResult
+
+```typescript
+interface CommandResult {
+  intent: CommandIntent;
+  executed: boolean;
+  output?: string;
+  error?: string;
+  uiAction?: string;
+  originalInput: string;
+  displayMessage: string;
+}
+```
+
+### CommandIntent
+
+```typescript
+type CommandIntent =
+  | 'terminal' | 'git_status' | 'git_log' | 'git_commit' | 'git_diff'
+  | 'search_code' | 'read_file' | 'list_dir'
+  | 'remember' | 'recall'
+  | 'open_codegen' | 'open_refactor' | 'open_designdoc' | 'open_pipeline'
+  | 'open_settings' | 'open_files' | 'open_terminal' | 'open_agents'
+  | 'open_usage' | 'open_compare'
+  | 'new_chat' | 'none';
+```

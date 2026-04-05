@@ -144,25 +144,23 @@ Only output the enhanced prompt, no explanations.`
       ];
 
       let model = settings.model;
+      let providerId = 'ollama-default';
       try {
         const routing = await ollamaService.resolveModel(messages, undefined, 'chat_general');
         model = routing.resolvedModel;
+        providerId = routing.providerId || 'ollama-default';
       } catch (err) {
         console.warn('Failed to resolve model, using default:', err);
       }
 
-      const response = await fetch(`${settings.endpoint.replace(/\/$/, '')}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          messages,
-          stream: false
-        })
-      });
-
-      const data = await response.json();
-      const enhanced = data.message?.content?.trim() || '';
+      const result = await ollamaService.chatComplete(
+        providerId,
+        model,
+        messages,
+        undefined,
+        'prompt_enhance'
+      );
+      const enhanced = result.content?.trim() || '';
       setEnhancedPrompt(enhanced);
       showToast('Prompt enhanced!', 'success');
     } catch (err: any) {

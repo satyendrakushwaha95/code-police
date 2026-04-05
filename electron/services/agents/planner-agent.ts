@@ -1,9 +1,8 @@
-import { OllamaEmbeddingsService, OllamaChatMessage } from '../embeddings';
+import { OllamaChatMessage } from '../embeddings';
+import { getSharedOllama } from '../shared-ollama';
 import { getModelRouter, RoutingDecision } from '../model-router';
 import { TaskPlan } from '../pipeline-types';
 import type { AgentConfig } from '../agent-types';
-
-const ollama = new OllamaEmbeddingsService();
 
 export class PlannerError extends Error {
   constructor(message: string, public rawOutput?: string) {
@@ -102,6 +101,7 @@ Create a focused plan that addresses exactly what was asked.`;
     let rawOutput = '';
     try {
       const model = agent?.defaultModel || modelDecision.resolvedModel;
+      const ollama = getSharedOllama();
       for await (const chunk of ollama.chat(model, messages)) {
         if (chunk.message?.content) {
           rawOutput += chunk.message.content;

@@ -5,6 +5,7 @@ import { useWorkspace } from '../../store/WorkspaceContext';
 import { ollamaService } from '../../services/ollama';
 import { buildContextFromAttachments } from '../../services/fileReader';
 import { calculateContextWindow } from '../../utils/contextWindow';
+import { routeCommand } from '../../services/command-router';
 import type { Message, FileAttachment, OllamaChatMessage } from '../../types/chat';
 import { v4 as uuidv4 } from 'uuid';
 import MessageBubble from './MessageBubble';
@@ -23,6 +24,7 @@ interface ChatViewProps {
   onOpenPipelinePanel?: () => void;
   onOpenAgentPanel?: () => void;
   onOpenFilePanel?: () => void;
+  onOpenCompare?: (prompt?: string) => void;
 }
 
 export interface ChatViewHandle {
@@ -30,7 +32,7 @@ export interface ChatViewHandle {
 }
 
 const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
-  { inputRef: _inputRef, onCloseChat, onOpenCodeGen, onOpenRefactor, onOpenPipelinePanel, onOpenAgentPanel, onOpenFilePanel },
+  { inputRef: _inputRef, onCloseChat, onOpenCodeGen, onOpenRefactor, onOpenPipelinePanel, onOpenAgentPanel, onOpenFilePanel, onOpenCompare },
   ref
 ) {
   const { state, dispatch, activeConversation } = useConversations();
@@ -215,6 +217,50 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
     const convId = activeConversation?.id || state.conversations[0]?.id;
     if (!convId) return;
 
+    // ── Jarvis: Command Router ──────────────────────────────────────────
+    if (!runAsPipeline && attachments.length === 0) {
+      const cmdResult = await routeCommand(content, workspace.rootPath || undefined);
+
+      if (cmdResult.intent !== 'none' && cmdResult.executed) {
+        // Handle UI panel openers
+        if (cmdResult.uiAction) {
+          const actionMap: Record<string, () => void> = {
+            codegen: () => onOpenCodeGen?.(),
+            refactor: () => onOpenRefactor?.(),
+            designdoc: () => document.dispatchEvent(new CustomEvent('localmind:openDesignDoc')),
+            pipeline: () => onOpenPipelinePanel?.(),
+            settings: () => document.dispatchEvent(new CustomEvent('localmind:openSettings')),
+            files: () => onOpenFilePanel?.(),
+            terminal: () => document.dispatchEvent(new CustomEvent('localmind:openTerminal')),
+            agents: () => onOpenAgentPanel?.(),
+            usage: () => document.dispatchEvent(new CustomEvent('localmind:openUsage')),
+            compare: () => onOpenCompare?.(content),
+            new_chat: () => dispatch({ type: 'CREATE_CONVERSATION', payload: { model: settings.model } }),
+          };
+          const action = actionMap[cmdResult.uiAction];
+          if (action) action();
+          return;
+        }
+
+        // Show command + result inline in chat
+        dispatch({ type: 'ADD_MESSAGE', payload: { conversationId: convId, message: {
+          id: uuidv4(),
+          role: 'user',
+          content,
+          timestamp: Date.now(),
+        }}});
+
+        dispatch({ type: 'ADD_MESSAGE', payload: { conversationId: convId, message: {
+          id: uuidv4(),
+          role: 'assistant',
+          content: cmdResult.displayMessage,
+          timestamp: Date.now(),
+        }}});
+        return;
+      }
+    }
+    // ── End Command Router ──────────────────────────────────────────────
+
     if (runAsPipeline) {
       console.log('[ChatView] Pipeline mode triggered', agentId ? `with agent ${agentId}` : '');
       
@@ -327,8 +373,21 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
 
     const ollamaMessages: OllamaChatMessage[] = [];
 
+    // Recall long-term memories relevant to this message
+    let memoryContext = '';
+    try {
+      const ipc = (window as any).ipcRenderer;
+      if (ipc) {
+        memoryContext = await ipc.invoke('memory:buildContext', { query: content });
+      }
+    } catch {
+      // Memory recall failed silently
+    }
+
     if (settings.systemPrompt) {
-      ollamaMessages.push({ role: 'system', content: settings.systemPrompt });
+      ollamaMessages.push({ role: 'system', content: settings.systemPrompt + memoryContext });
+    } else if (memoryContext) {
+      ollamaMessages.push({ role: 'system', content: memoryContext });
     }
 
     const allAttachments = [
@@ -355,10 +414,9 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
     }
 
     setIsStreaming(true);
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
 
     let model = settings.model;
+    let providerId = 'ollama-default';
     let usedFallback = false;
     try {
       const routing = await ollamaService.resolveModel(
@@ -371,6 +429,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
         'chat_general'
       );
       model = routing.resolvedModel;
+      providerId = routing.providerId || 'ollama-default';
       usedFallback = routing.usedFallback;
       if (usedFallback) {
         showToast(`Using fallback model: ${model}`, 'info');
@@ -379,11 +438,105 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
       console.warn('Failed to resolve model, using default:', err);
     }
 
-    try {
-      ollamaService.setEndpoint(settings.endpoint);
-      let fullContent = '';
+    const streamId = `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const currentStreamIdRef = { current: streamId };
+    const streamStartTime = Date.now();
+    abortControllerRef.current = { abort: () => ollamaService.abortIPCStream(streamId) } as AbortController;
 
-      for await (const chunk of ollamaService.chatStream(
+    let fullContent = '';
+
+    const removeChunkListener = ollamaService.onStreamChunk((data) => {
+      if (data.streamId !== currentStreamIdRef.current) return;
+      if (data.content) {
+        fullContent += data.content;
+        dispatch({
+          type: 'UPDATE_MESSAGE',
+          payload: {
+            conversationId: convId,
+            messageId: assistantMessage.id,
+            content: fullContent,
+            isStreaming: !data.done,
+          },
+        });
+      }
+      if (data.done) {
+        const usageInfo = data.usage ? {
+          promptTokens: data.usage.prompt_tokens,
+          completionTokens: data.usage.completion_tokens,
+          totalTokens: data.usage.total_tokens,
+          costUsd: 0,
+          durationMs: Date.now() - streamStartTime,
+          model,
+          providerId,
+        } : undefined;
+
+        dispatch({
+          type: 'UPDATE_MESSAGE',
+          payload: {
+            conversationId: convId,
+            messageId: assistantMessage.id,
+            content: fullContent,
+            isStreaming: false,
+            usage: usageInfo,
+          },
+        });
+
+        // Auto-extract memories from this exchange (background, non-blocking)
+        const ipc = (window as any).ipcRenderer;
+        if (ipc && content.length > 20) {
+          const excerpt = `User: ${content.slice(0, 500)}\nAssistant: ${fullContent.slice(0, 500)}`;
+          ipc.invoke('memory:getExtractionPrompt', { conversationText: excerpt }).then(async (prompt: string) => {
+            try {
+              const result = await ollamaService.chatComplete('ollama-default', model, [
+                { role: 'user', content: prompt }
+              ], { temperature: 0.1 }, 'memory_extraction');
+              const jsonMatch = result.content.match(/\[[\s\S]*\]/);
+              if (jsonMatch) {
+                const facts = JSON.parse(jsonMatch[0]);
+                for (const fact of facts) {
+                  if (fact.content && fact.category) {
+                    await ipc.invoke('memory:add', {
+                      category: fact.category,
+                      content: fact.content,
+                      source: 'auto',
+                      importance: fact.importance || 1,
+                    });
+                  }
+                }
+              }
+            } catch { /* auto-extraction is best-effort */ }
+          }).catch(() => {});
+        }
+
+        cleanup();
+      }
+    });
+
+    const removeErrorListener = ollamaService.onStreamError((data) => {
+      if (data.streamId !== currentStreamIdRef.current) return;
+      dispatch({
+        type: 'UPDATE_MESSAGE',
+        payload: {
+          conversationId: convId,
+          messageId: assistantMessage.id,
+          content: `⚠️ **Error**: ${data.error}\n\nCheck that your provider is configured and running in Settings → Providers.`,
+          isStreaming: false,
+        },
+      });
+      cleanup();
+    });
+
+    const cleanup = () => {
+      removeChunkListener();
+      removeErrorListener();
+      setIsStreaming(false);
+      abortControllerRef.current = null;
+    };
+
+    try {
+      await ollamaService.startIPCStream(
+        streamId,
+        providerId,
         model,
         ollamaMessages,
         {
@@ -391,59 +544,21 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
           top_p: settings.topP,
           num_ctx: settings.contextLength,
         },
-        abortController.signal
-      )) {
-        if (chunk.message?.content) {
-          fullContent += chunk.message.content;
-          dispatch({
-            type: 'UPDATE_MESSAGE',
-            payload: {
-              conversationId: convId,
-              messageId: assistantMessage.id,
-              content: fullContent,
-              isStreaming: !chunk.done,
-            },
-          });
-        }
-
-        if (chunk.done) {
-          dispatch({
-            type: 'UPDATE_MESSAGE',
-            payload: {
-              conversationId: convId,
-              messageId: assistantMessage.id,
-              content: fullContent,
-              isStreaming: false,
-            },
-          });
-        }
-      }
+        assistantMessage.id,
+        convId
+      );
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        dispatch({
-          type: 'UPDATE_MESSAGE',
-          payload: {
-            conversationId: convId,
-            messageId: assistantMessage.id,
-            content: (state.conversations.find(c => c.id === convId)?.messages.find(m => m.id === assistantMessage.id)?.content || '') + '\n\n*[Generation stopped]*',
-            isStreaming: false,
-          },
-        });
-      } else {
-        const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-        dispatch({
-          type: 'UPDATE_MESSAGE',
-          payload: {
-            conversationId: convId,
-            messageId: assistantMessage.id,
-            content: `⚠️ **Error**: ${errorMsg}\n\nMake sure Ollama is running at \`${settings.endpoint}\` with the \`${settings.model}\` model loaded.`,
-            isStreaming: false,
-          },
-        });
-      }
-    } finally {
-      setIsStreaming(false);
-      abortControllerRef.current = null;
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+      dispatch({
+        type: 'UPDATE_MESSAGE',
+        payload: {
+          conversationId: convId,
+          messageId: assistantMessage.id,
+          content: `⚠️ **Error**: ${errorMsg}\n\nCheck that your provider is configured and running in Settings → Providers.`,
+          isStreaming: false,
+        },
+      });
+      cleanup();
     }
   }, [activeConversation, state.conversations, dispatch, settings, pendingAttachments]);
 
@@ -741,6 +856,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
               isPipeline={msg.isPipeline}
               pipelineStatus={msg.pipelineStatus}
               pipelineRunId={msg.pipelineRunId}
+              usage={msg.usage}
               onEdit={msg.role === 'user' ? (newContent) => handleEditMessage(msg.id, newContent) : undefined}
               onRegenerate={msg.role === 'assistant' ? () => handleRegenerate(msg.id) : undefined}
               onDelete={() => handleDeleteMessage(msg.id)}
@@ -785,6 +901,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
             disabled={!connected}
             connected={connected}
             initialValue={pendingPrompt || undefined}
+            onCompare={onOpenCompare}
           />
         </div>
       </div>

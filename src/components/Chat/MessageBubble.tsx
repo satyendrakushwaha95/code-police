@@ -66,6 +66,16 @@ function CodeBlock({ code, language }: CodeBlockProps) {
   );
 }
 
+interface MessageUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  costUsd: number;
+  durationMs: number;
+  model?: string;
+  providerId?: string;
+}
+
 interface MessageBubbleProps {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -74,13 +84,28 @@ interface MessageBubbleProps {
   isPipeline?: boolean;
   pipelineStatus?: 'starting' | 'running' | 'complete' | 'failed' | 'cancelled';
   pipelineRunId?: string;
+  usage?: MessageUsage;
   onEdit?: (newContent: string) => void;
   onRegenerate?: () => void;
   onDelete?: () => void;
 }
 
+function formatTokenCount(n: number): string {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return String(n);
+}
+
+function formatCost(usd: number): string {
+  if (usd === 0) return 'Free';
+  if (usd < 0.001) return `$${usd.toFixed(6)}`;
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  if (usd < 1) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
 export default function MessageBubble({
-  role, content, isStreaming, timestamp, isPipeline, pipelineStatus, onEdit, onRegenerate, onDelete
+  role, content, isStreaming, timestamp, isPipeline, pipelineStatus, usage, onEdit, onRegenerate, onDelete
 }: MessageBubbleProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(content);
@@ -213,6 +238,33 @@ export default function MessageBubble({
                   {pipelineStatus === 'cancelled' && 'Pipeline Cancelled'}
                 </span>
               </div>
+            )}
+          </div>
+        )}
+
+        {role === 'assistant' && usage && !isStreaming && (
+          <div className="message-usage-bar">
+            <span className="usage-chip" title={`Input: ${usage.promptTokens} | Output: ${usage.completionTokens}`}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+              {formatTokenCount(usage.totalTokens)} tokens
+            </span>
+            {usage.costUsd > 0 && (
+              <span className="usage-chip cost" title={`$${usage.costUsd.toFixed(6)}`}>
+                {formatCost(usage.costUsd)}
+              </span>
+            )}
+            {usage.costUsd === 0 && (
+              <span className="usage-chip free">Free</span>
+            )}
+            {usage.durationMs > 0 && (
+              <span className="usage-chip" title="Response time">
+                {(usage.durationMs / 1000).toFixed(1)}s
+              </span>
+            )}
+            {usage.model && (
+              <span className="usage-chip model" title={usage.providerId || ''}>
+                {usage.model}
+              </span>
             )}
           </div>
         )}

@@ -11,8 +11,16 @@ export interface OllamaChatOptions {
   num_ctx?: number;
 }
 
+export interface ChatUsageData {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  totalDurationNs?: number;
+}
+
 export class OllamaEmbeddingsService {
   private endpoint: string;
+  public lastUsage: ChatUsageData | null = null;
 
   constructor(endpoint: string = OLLAMA_ENDPOINT) {
     this.endpoint = endpoint;
@@ -55,7 +63,9 @@ export class OllamaEmbeddingsService {
     messages: OllamaChatMessage[],
     options?: OllamaChatOptions,
     signal?: AbortSignal
-  ): AsyncGenerator<{ done: boolean; message?: { role: string; content: string }; error?: string }> {
+  ): AsyncGenerator<{ done: boolean; message?: { role: string; content: string }; error?: string; prompt_eval_count?: number; eval_count?: number; total_duration?: number }> {
+    this.lastUsage = null;
+
     const res = await fetch(`${this.endpoint}/api/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -95,6 +105,14 @@ export class OllamaEmbeddingsService {
           if (!trimmed) continue;
           try {
             const chunk = JSON.parse(trimmed);
+            if (chunk.done && (chunk.prompt_eval_count || chunk.eval_count)) {
+              this.lastUsage = {
+                promptTokens: chunk.prompt_eval_count || 0,
+                completionTokens: chunk.eval_count || 0,
+                totalTokens: (chunk.prompt_eval_count || 0) + (chunk.eval_count || 0),
+                totalDurationNs: chunk.total_duration,
+              };
+            }
             yield chunk;
           } catch {
             // skip malformed JSON
@@ -104,7 +122,16 @@ export class OllamaEmbeddingsService {
 
       if (buffer.trim()) {
         try {
-          yield JSON.parse(buffer.trim());
+          const chunk = JSON.parse(buffer.trim());
+          if (chunk.done && (chunk.prompt_eval_count || chunk.eval_count)) {
+            this.lastUsage = {
+              promptTokens: chunk.prompt_eval_count || 0,
+              completionTokens: chunk.eval_count || 0,
+              totalTokens: (chunk.prompt_eval_count || 0) + (chunk.eval_count || 0),
+              totalDurationNs: chunk.total_duration,
+            };
+          }
+          yield chunk;
         } catch {
           // skip
         }

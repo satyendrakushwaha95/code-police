@@ -248,28 +248,26 @@ Only output the test code.`;
       ];
 
       let model = settings.model;
+      let providerId = 'ollama-default';
       try {
         const routing = await ollamaService.resolveModel(messages, undefined, 'code_refactor');
         model = routing.resolvedModel;
+        providerId = routing.providerId || 'ollama-default';
       } catch (err) {
         console.warn('Failed to resolve model, using default:', err);
       }
 
-      const response = await fetch(`${settings.endpoint.replace(/\/$/, '')}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          stream: false
-        })
-      });
-
-      const data = await response.json();
-      const content = data.message?.content || '';
+      const result = await ollamaService.chatComplete(
+        providerId,
+        model,
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        undefined,
+        'code_refactor'
+      );
+      const content = result.content;
       
       if (selectedOperation === 'detect_bugs' || selectedOperation === 'explain') {
         setRefactoredCode('');
@@ -323,37 +321,23 @@ Preserve original functionality. Use best practices. Output only the refactored 
       ];
 
       let model = settings.model;
+      let providerId = 'ollama-default';
       try {
         const routing = await ollamaService.resolveModel(messages, undefined, 'code_refactor');
         model = routing.resolvedModel;
+        providerId = routing.providerId || 'ollama-default';
       } catch (err) {
         console.warn('Failed to resolve model, using default:', err);
       }
 
-      const response = await fetch(`${settings.endpoint.replace(/\/$/, '')}/api/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { 
-              role: 'system', 
-              content: `You are an expert code refactoring assistant. Apply a safe, comprehensive refactor:
-1. Clean code (format, simplify, improve naming)
-2. Optimize (performance, reduce redundancy)
-3. Secure (fix vulnerabilities, add validation, error handling)
-4. Document (add meaningful comments)
-
-Preserve original functionality. Use best practices. Output only the refactored code with brief summary.`
-            },
-            { role: 'user', content: `Code:\n${code}` }
-          ],
-          stream: false
-        })
-      });
-
-      const data = await response.json();
-      const content = data.message?.content || '';
+      const result = await ollamaService.chatComplete(
+        providerId,
+        model,
+        messages,
+        undefined,
+        'code_refactor'
+      );
+      const content = result.content;
       const codeMatch = content.match(/```(?:\w+)?\n([\s\S]*?)```/);
       setRefactoredCode(codeMatch ? codeMatch[1].trim() : content);
       setSelectedOperation('');

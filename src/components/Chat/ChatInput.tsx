@@ -4,6 +4,7 @@ import { readFileContent, formatFileSize } from '../../services/fileReader';
 import { useWorkspace } from '../../store/WorkspaceContext';
 import { useSettings } from '../../store/SettingsContext';
 import { useAgents } from '../../store/AgentContext';
+import { getSlashCommandHints } from '../../services/command-router';
 import type { WorkspaceFile } from '../../store/WorkspaceContext';
 import './Chat.css';
 
@@ -14,10 +15,11 @@ interface ChatInputProps {
   disabled: boolean;
   connected?: boolean | null;
   initialValue?: string;
+  onCompare?: (prompt?: string) => void;
 }
 
 const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function ChatInput(
-  { onSend, onStop, isStreaming, disabled, connected, initialValue = '' },
+  { onSend, onStop, isStreaming, disabled, connected, initialValue = '', onCompare },
   ref
 ) {
   const [input, setInput] = useState(initialValue);
@@ -33,6 +35,9 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
   const [mentionIndex, setMentionIndex] = useState(0);
   const [mentionStart, setMentionStart] = useState<number | null>(null);
   const [showWorkspaceHint, setShowWorkspaceHint] = useState(false);
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [slashQuery, setSlashQuery] = useState('');
+  const [slashIndex, setSlashIndex] = useState(0);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -97,6 +102,27 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
   }, [input, attachments, disabled, onSend, inputMode, selectedAgentId]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (showSlashMenu && filteredSlashHints.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSlashIndex(prev => (prev < filteredSlashHints.length - 1 ? prev + 1 : prev));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSlashIndex(prev => (prev > 0 ? prev - 1 : prev));
+        return;
+      }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !input.includes(' '))) {
+        e.preventDefault();
+        insertSlashCommand(filteredSlashHints[slashIndex].command);
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowSlashMenu(false);
+        return;
+      }
+    }
     if (showMentionMenu && filteredFiles.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -128,6 +154,17 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
     const value = e.target.value;
     setInput(value);
 
+    // Slash command detection
+    if (value.startsWith('/')) {
+      setShowSlashMenu(true);
+      setSlashQuery(value.slice(1).toLowerCase());
+      setSlashIndex(0);
+    } else if (value.startsWith('$')) {
+      setShowSlashMenu(false);
+    } else {
+      setShowSlashMenu(false);
+    }
+
     const cursorPos = e.target.selectionStart;
     const textBeforeCursor = value.slice(0, cursorPos);
     const atMatch = textBeforeCursor.match(/@([^\s@]*)$/);
@@ -142,6 +179,18 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
       setMentionQuery('');
       setMentionStart(null);
     }
+  };
+
+  const allSlashHints = getSlashCommandHints();
+  const filteredSlashHints = slashQuery
+    ? allSlashHints.filter(h => h.command.toLowerCase().includes(slashQuery) || h.description.toLowerCase().includes(slashQuery))
+    : allSlashHints;
+
+  const insertSlashCommand = (cmd: string) => {
+    const base = cmd.split(' ')[0];
+    setInput(base + ' ');
+    setShowSlashMenu(false);
+    textareaRef.current?.focus();
   };
 
   const filteredFiles: WorkspaceFile[] = workspace.rootPath
@@ -220,6 +269,21 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
 
       <div className="input-main-row">
         <div className="input-wrapper">
+          {showSlashMenu && filteredSlashHints.length > 0 && (
+            <ul className="mention-dropdown slash-dropdown">
+              {filteredSlashHints.map((hint, idx) => (
+                <li
+                  key={hint.command}
+                  className={`mention-item ${idx === slashIndex ? 'active' : ''}`}
+                  onClick={() => insertSlashCommand(hint.command)}
+                  onMouseEnter={() => setSlashIndex(idx)}
+                >
+                  <span className="slash-cmd">{hint.command}</span>
+                  <span className="slash-desc">{hint.description}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           {showMentionMenu && filteredFiles.length > 0 && (
             <ul className="mention-dropdown">
               {filteredFiles.map((file, idx) => (
@@ -240,7 +304,7 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={isDragOver ? 'Drop files here...' : 'Type a message... (@ to attach file, Enter to send)'}
+            placeholder={isDragOver ? 'Drop files here...' : 'Message, / for commands, $ for shell, @ for files...'}
             className="chat-textarea"
             rows={1}
             disabled={disabled}
@@ -289,6 +353,16 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
           >
             Chat
           </button>
+          {onCompare && (
+            <button
+              className="mode-btn compare-btn"
+              onClick={() => onCompare(input.trim() || undefined)}
+              disabled={isStreaming}
+              title="Compare responses from multiple models side-by-side"
+            >
+              Compare
+            </button>
+          )}
           <div className="send-to-agent-wrapper">
             <button
               className={`mode-btn ${inputMode === 'agent' ? 'active' : ''} ${!workspace.rootPath ? 'no-workspace' : ''}`}

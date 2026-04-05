@@ -4,6 +4,7 @@ import { AgentMemoryService } from './memory';
 export interface RoutingDecision {
   category: TaskCategory;
   resolvedModel: string;
+  providerId: string;
   usedFallback: boolean;
   reason?: string;
 }
@@ -70,11 +71,13 @@ export class ModelRouter {
     const config = this.configStore.get();
     const route = config.routes[category];
     const defaultModel = config.defaultModel;
+    const defaultProviderId = config.defaultProviderId || 'ollama-default';
 
     if (!route.enabled) {
-      const decision = {
+      const decision: RoutingDecision = {
         category,
         resolvedModel: defaultModel,
+        providerId: defaultProviderId,
         usedFallback: false,
         reason: 'category disabled'
       };
@@ -82,6 +85,7 @@ export class ModelRouter {
       return decision;
     }
 
+    const routeProviderId = route.providerId || defaultProviderId;
     const isAvailable = await this.validate(route.model);
 
     if (!isAvailable && route.fallbackToDefault) {
@@ -91,9 +95,10 @@ export class ModelRouter {
         throw new Error(`No models available. Primary: ${route.model}, Fallback: ${defaultModel}`);
       }
 
-      const decision = {
+      const decision: RoutingDecision = {
         category,
         resolvedModel: defaultModel,
+        providerId: defaultProviderId,
         usedFallback: true,
         reason: 'model unavailable'
       };
@@ -105,9 +110,10 @@ export class ModelRouter {
       throw new Error(`Model ${route.model} is not available`);
     }
 
-    const decision = {
+    const decision: RoutingDecision = {
       category,
       resolvedModel: route.model,
+      providerId: routeProviderId,
       usedFallback: false
     };
     this.logRoutingDecision(decision);
@@ -139,6 +145,7 @@ export class ModelRouter {
     return {
       category: 'chat_general',
       resolvedModel: config.defaultModel,
+      providerId: config.defaultProviderId || 'ollama-default',
       usedFallback: true,
       reason: 'model unavailable'
     };
