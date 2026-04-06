@@ -40,6 +40,7 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
     { id: 'files', label: 'File Explorer', icon: '📂', category: 'action', action: () => onAction('files') },
     { id: 'terminal', label: 'Terminal', icon: '🖥️', category: 'action', action: () => onAction('terminal') },
     { id: 'agents', label: 'Manage Agents', icon: '🤖', category: 'action', action: () => onAction('agents') },
+    { id: 'onboard', label: 'Onboard Project', description: 'Analyze & understand current project', icon: '📋', category: 'action', action: () => onAction('onboard') },
     { id: 'usage', label: 'Usage & Costs', icon: '📊', category: 'action', action: () => onAction('usage') },
     { id: 'settings', label: 'Settings', icon: '⚙️', category: 'action', action: () => onAction('settings') },
     { id: 'shortcuts', label: 'Keyboard Shortcuts', icon: '⌨️', category: 'action', action: () => onAction('shortcuts') },

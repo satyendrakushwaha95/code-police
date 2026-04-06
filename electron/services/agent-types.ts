@@ -14,6 +14,7 @@ export interface AgentConfig {
   constraints: AgentConstraints;
   knowledgeBase: KnowledgeBaseConfig;
   pipelineStages: AgentPipelineConfig;
+  conversationStarters?: string[];
 }
 
 export interface AgentToolConfig {
@@ -287,9 +288,8 @@ When generating code:
     enabledTools: [
       { toolId: 'read_file', enabled: true },
       { toolId: 'write_file', enabled: true },
-      { toolId: 'edit_file', enabled: true },
       { toolId: 'list_directory', enabled: true },
-      { toolId: 'search_files', enabled: true },
+      { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
       allowedFilePatterns: ['*', '**/*', '*.html', '*.css', '*.scss', '*.sass', '*.ts', '*.tsx', '*.js', '*.jsx', '*.json', '*.md', '**/*.html', '**/*.css', '**/*.scss', '**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
@@ -325,9 +325,8 @@ When generating code:
     enabledTools: [
       { toolId: 'read_file', enabled: true },
       { toolId: 'write_file', enabled: true },
-      { toolId: 'edit_file', enabled: true },
       { toolId: 'list_directory', enabled: true },
-      { toolId: 'search_files', enabled: true },
+      { toolId: 'grep_search', enabled: true },
       { toolId: 'execute_command', enabled: true },
     ],
     constraints: {
@@ -364,7 +363,7 @@ When reviewing code:
     enabledTools: [
       { toolId: 'read_file', enabled: true },
       { toolId: 'list_directory', enabled: true },
-      { toolId: 'search_files', enabled: true },
+      { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
       allowedFilePatterns: ['*', '**/*', '*.ts', '*.tsx', '*.js', '*.jsx', '*.py', '*.go', '*.rs', '*.java', '*.cs', '*.md', '**/*.ts', '**/*.js', '**/*.py'],
@@ -400,7 +399,7 @@ When auditing code:
     enabledTools: [
       { toolId: 'read_file', enabled: true },
       { toolId: 'list_directory', enabled: true },
-      { toolId: 'search_files', enabled: true },
+      { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
       allowedFilePatterns: ['*', '**/*', '*.ts', '*.tsx', '*.js', '*.jsx', '*.py', '*.go', '*.java', '*.cs', '*.md', '**/*.ts', '**/*.js', '**/*.py'],
@@ -436,9 +435,8 @@ When generating configurations:
     enabledTools: [
       { toolId: 'read_file', enabled: true },
       { toolId: 'write_file', enabled: true },
-      { toolId: 'edit_file', enabled: true },
       { toolId: 'list_directory', enabled: true },
-      { toolId: 'search_files', enabled: true },
+      { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
       allowedFilePatterns: ['*', '**/*', 'Dockerfile', 'docker-compose*.yml', '*.yaml', '*.yml', '*.json', '*.tf', '*.sh', '*.bash', 'Makefile', 'Jenkinsfile', '*.md', '**/Dockerfile', '**/*.yaml', '**/*.yml'],
@@ -474,9 +472,8 @@ When generating code:
     enabledTools: [
       { toolId: 'read_file', enabled: true },
       { toolId: 'write_file', enabled: true },
-      { toolId: 'edit_file', enabled: true },
       { toolId: 'list_directory', enabled: true },
-      { toolId: 'search_files', enabled: true },
+      { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
       allowedFilePatterns: ['*', '**/*', '*.py', '*.sql', '*.yaml', '*.yml', '*.json', '*.scala', '*.java', '*.md', '**/*.py', '**/*.sql', '**/*.yaml'],
@@ -512,9 +509,8 @@ When writing documentation:
     enabledTools: [
       { toolId: 'read_file', enabled: true },
       { toolId: 'write_file', enabled: true },
-      { toolId: 'edit_file', enabled: true },
       { toolId: 'list_directory', enabled: true },
-      { toolId: 'search_files', enabled: true },
+      { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
       allowedFilePatterns: ['*', '**/*', '*.md', '*.txt', '*.rst', '*.html', '*.tex', '**/*.md'],
@@ -550,9 +546,8 @@ When helping:
     enabledTools: [
       { toolId: 'read_file', enabled: true },
       { toolId: 'write_file', enabled: true },
-      { toolId: 'edit_file', enabled: true },
       { toolId: 'list_directory', enabled: true },
-      { toolId: 'search_files', enabled: true },
+      { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
       allowedFilePatterns: ['*'],

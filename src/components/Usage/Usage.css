@@ -1,9 +1,86 @@
-/* ─── Usage Dashboard ──────────────────────────────────────────────────────── */
+/* ─── Usage Modal Overlay ──────────────────────────────────────────────────── */
+
+.usage-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: usage-fade-in 0.15s ease-out;
+}
+
+@keyframes usage-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
 .usage-dashboard {
-  width: var(--side-panel-width, 560px);
-  min-width: 400px;
-  max-width: 700px;
+  width: 640px;
+  max-width: calc(100vw - 60px);
+  max-height: calc(100vh - 80px);
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: usage-slide-up 0.2s ease-out;
+}
+
+@keyframes usage-slide-up {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.usage-dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.usage-dashboard-header .side-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.usage-dashboard-header .side-panel-title svg {
+  color: var(--accent);
+}
+
+.usage-dashboard-header .side-panel-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.usage-dashboard > .usage-time-selector {
+  flex-shrink: 0;
+}
+
+.usage-dashboard > .side-panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.usage-dashboard > .side-panel-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.usage-dashboard > .side-panel-content::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
 }
 
 .usage-time-selector {

@@ -1006,3 +1006,178 @@
 .stage-card.running .stage-header {
   background: linear-gradient(90deg, var(--bg-tertiary), rgba(59, 130, 246, 0.1));
 }
+
+/* --- Skipped Stage --- */
+.stage-card.skipped {
+  opacity: 0.55;
+  border-color: var(--border);
+}
+
+.stage-card.skipped .stage-header {
+  cursor: default;
+}
+
+.status-icon.skipped {
+  color: var(--text-muted);
+}
+
+.skipped-reason {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-left: auto;
+}
+
+/* --- Research Results --- */
+.research-results {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.research-summary {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--accent);
+}
+
+.findings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.findings-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.findings-list li {
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  line-height: 1.5;
+}
+
+.pattern-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pattern-tag {
+  font-size: 11px;
+  padding: 3px 10px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-secondary);
+}
+
+.files-examined-list {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.files-examined-list li {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+/* --- Security Results --- */
+.security-results {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.security-score-badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  width: fit-content;
+}
+
+.security-score-badge.green {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.security-score-badge.yellow {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.security-score-badge.red {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+.score-value {
+  font-size: 24px;
+}
+
+.score-label {
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.security-summary {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.vulnerability-section,
+.dependency-issues-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.severity-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.severity-badge.sev-critical {
+  background: var(--error);
+  color: white;
+}
+
+.severity-badge.sev-high {
+  background: #f97316;
+  color: white;
+}
+
+.severity-badge.sev-medium {
+  background: var(--warning);
+  color: #000;
+}
+
+.severity-badge.sev-low {
+  background: var(--info);
+  color: white;
+}
+
+.vuln-recommendation {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 2px;
+}

@@ -70,6 +70,29 @@ export interface ValidationResult {
   summary: string;
 }
 
+export interface ResearchResult {
+  files_examined: string[];
+  key_findings: string[];
+  relevant_patterns: string[];
+  existing_implementation: Array<{ file: string; code: string; relevance: string }>;
+  summary: string;
+}
+
+export interface SecurityResult {
+  verdict: 'PASS' | 'FAIL';
+  vulnerabilities: Array<{
+    severity: 'critical' | 'high' | 'medium' | 'low';
+    type: string;
+    description: string;
+    file: string;
+    line?: number;
+    recommendation: string;
+  }>;
+  dependency_issues: Array<{ package: string; issue: string; severity: string }>;
+  summary: string;
+  score: number;
+}
+
 export type StageStatus = 'pending' | 'running' | 'complete' | 'failed' | 'skipped';
 
 export interface StageResult<T> {
@@ -80,6 +103,21 @@ export interface StageResult<T> {
   error?: string;
 }
 
+export type PipelineTemplate =
+  | 'quick-fix'
+  | 'standard'
+  | 'deep-review'
+  | 'docs-only'
+  | 'refactor';
+
+export interface PipelineTemplateConfig {
+  id: PipelineTemplate;
+  name: string;
+  description: string;
+  stages: string[];
+  icon: string;
+}
+
 export interface PipelineRun {
   id: string;
   task_description: string;
@@ -88,27 +126,24 @@ export interface PipelineRun {
   completed_at?: number;
   retry_count: number;
   final_verdict?: 'PASS' | 'FAIL';
-  stages: {
-    plan: StageResult<TaskPlan>;
-    action: StageResult<CodeOutput>;
-    review: StageResult<ReviewResult>;
-    validate: StageResult<ValidationResult>;
-    execute: StageResult<ExecuteResult>;
-  };
+  template?: PipelineTemplate;
+  stage_order?: string[];
+  stages: Record<string, StageResult<any>>;
 }
 
 export interface PipelineOptions {
   maxRetries: number;
   timeoutMs: number;
   autoExecute: boolean;
+  smartSkip?: boolean;
 }
 
-export type PipelineStage = 'plan' | 'action' | 'review' | 'validate' | 'execute';
+export type PipelineStage = 'plan' | 'action' | 'review' | 'validate' | 'execute' | 'research' | 'security';
 
 const ipcRenderer = (window as any).ipcRenderer;
 
 interface UsePipelineReturn {
-  run: (task: string, options: PipelineOptions, projectRoot?: string, agentId?: string) => Promise<{ runId: string }>;
+  run: (task: string, options: PipelineOptions, projectRoot?: string, agentId?: string, template?: PipelineTemplate) => Promise<{ runId: string }>;
   retryFix: (runId: string, suggestions: string[]) => Promise<{ runId: string }>;
   cancel: (runId?: string) => Promise<void>;
   deleteRun: (runId: string) => Promise<void>;
@@ -116,7 +151,8 @@ interface UsePipelineReturn {
   activeRun: PipelineRun | null;
   history: PipelineRun[];
   isRunning: boolean;
-  getStageOutput: (runId: string, stage: PipelineStage) => Promise<StageResult<any> | null>;
+  getStageOutput: (runId: string, stage: string) => Promise<StageResult<any> | null>;
+  getTemplates: () => Promise<PipelineTemplateConfig[]>;
   refreshHistory: () => Promise<void>;
 }
 
@@ -181,25 +217,43 @@ export function usePipeline(): UsePipelineReturn {
     };
   }, [stopPolling]);
 
-  const run = useCallback(async (task: string, options: PipelineOptions, projectRoot?: string, agentId?: string) => {
+  const run = useCallback(async (
+    task: string,
+    options: PipelineOptions,
+    projectRoot?: string,
+    agentId?: string,
+    template?: PipelineTemplate
+  ) => {
     setIsRunning(true);
     const tempRunId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    
+
+    const defaultStages = ['plan', 'action', 'review', 'validate', 'execute'];
+    let templateStages: string[] = defaultStages;
+
+    if (template) {
+      try {
+        const templates: PipelineTemplateConfig[] = await ipcRenderer.invoke('pipeline:getTemplates');
+        const found = templates.find(t => t.id === template);
+        if (found) templateStages = found.stages;
+      } catch { /* fallback to default */ }
+    }
+
+    const stages: Record<string, StageResult<any>> = {};
+    for (const stage of templateStages) {
+      stages[stage] = { status: 'pending', model_used: '' };
+    }
+
     const newRun: PipelineRun = {
       id: tempRunId,
       task_description: task,
       status: 'running',
       created_at: Date.now(),
       retry_count: 0,
-      stages: {
-        plan: { status: 'pending', model_used: '' },
-        action: { status: 'pending', model_used: '' },
-        review: { status: 'pending', model_used: '' },
-        validate: { status: 'pending', model_used: '' },
-        execute: { status: 'pending', model_used: '' }
-      }
+      template,
+      stage_order: templateStages,
+      stages,
     };
-    
+
     setActiveRun(newRun);
     currentRunId.current = tempRunId;
     startPolling(tempRunId);
@@ -211,6 +265,7 @@ export function usePipeline(): UsePipelineReturn {
         projectRoot,
         runId: tempRunId,
         agentId,
+        template,
       });
       return { runId: tempRunId };
     } catch (err) {
@@ -250,21 +305,25 @@ export function usePipeline(): UsePipelineReturn {
     }
   }, [startPolling, stopPolling]);
 
-  const getStageOutput = useCallback(async (runId: string, stage: PipelineStage) => {
+  const getStageOutput = useCallback(async (runId: string, stage: string) => {
     return ipcRenderer.invoke('pipeline:getStageOutput', { runId, stage });
+  }, []);
+
+  const getTemplates = useCallback(async (): Promise<PipelineTemplateConfig[]> => {
+    return ipcRenderer.invoke('pipeline:getTemplates');
   }, []);
 
   const analyzeAndRetry = useCallback(async (runId: string, userPrompt: string) => {
     setIsRunning(true);
     try {
       const result = await ipcRenderer.invoke('pipeline:analyzeAndRetry', { runId, userPrompt });
-      
+
       if (result.action === 'restart_required' || result.action === 'replan_required') {
         setIsRunning(false);
         refreshHistory();
         return result;
       }
-      
+
       if (result.action === 'retry_with_feedback') {
         const suggestions = [result.feedback || userPrompt];
         await ipcRenderer.invoke('pipeline:retryFix', { runId, suggestions });
@@ -272,13 +331,13 @@ export function usePipeline(): UsePipelineReturn {
         startPolling(runId);
         return result;
       }
-      
+
       if (result.action === 'cancelled') {
         setIsRunning(false);
         refreshHistory();
         return result;
       }
-      
+
       return result;
     } catch (err) {
       setIsRunning(false);
@@ -297,6 +356,7 @@ export function usePipeline(): UsePipelineReturn {
     history,
     isRunning,
     getStageOutput,
+    getTemplates,
     refreshHistory
   };
 }

@@ -10,13 +10,15 @@ import { getRoutingConfigStore, RoutingConfig, TaskCategory } from './services/r
 import { getModelRouter, RoutingDecision } from './services/model-router';
 import { getPipelineStateStore } from './services/pipeline-state';
 import { getPipelineOrchestrator } from './services/pipeline-orchestrator';
-import { PipelineOptions, PipelineStage } from './services/pipeline-types';
+import { PipelineOptions, PipelineStage, PipelineTemplate } from './services/pipeline-types';
+import { PIPELINE_TEMPLATES } from './services/pipeline-templates';
 import { getAgentManager } from './services/agent-manager';
 import { CreateAgentInput, UpdateAgentInput, AGENT_PRESETS } from './services/agent-types';
 import { getProviderRegistry } from './services/providers/provider-registry';
 import { ProviderConfig, PROVIDER_PRESETS } from './services/providers/provider-types';
 import { getUsageTracker } from './services/usage-tracker';
 import { getLongTermMemory } from './services/long-term-memory';
+import { runOnboarding, formatOnboardingReport } from './services/project-onboarding';
 
 process.env.APP_ROOT = path.join(__dirname, '..');
 
@@ -456,16 +458,21 @@ ipcMain.handle('ollama:checkConnection', async () => {
 });
 
 // Pipeline IPC Handlers
+ipcMain.handle('pipeline:getTemplates', async () => {
+  return PIPELINE_TEMPLATES;
+});
+
 ipcMain.handle('pipeline:run', async (_, payload: {
   task: string;
   options: PipelineOptions;
   projectRoot?: string;
   runId?: string;
   agentId?: string;
+  template?: PipelineTemplate;
 }) => {
-  const { task, options, projectRoot, runId, agentId } = payload;
+  const { task, options, projectRoot, runId, agentId, template } = payload;
   try {
-    console.log('[Pipeline] Starting pipeline run:', task, agentId ? `with agent ${agentId}` : '');
+    console.log('[Pipeline] Starting pipeline run:', task, agentId ? `with agent ${agentId}` : '', template ? `template: ${template}` : '');
     
     const stateStore = getPipelineStateStore();
     console.log('[Pipeline] State store initialized');
@@ -481,7 +488,7 @@ ipcMain.handle('pipeline:run', async (_, payload: {
       orchestrator.setActiveAgent(agentId);
     }
     
-    const result = await orchestrator.run(task, options, undefined, runId);
+    const result = await orchestrator.run(task, options, undefined, runId, template);
     console.log('[Pipeline] Run completed:', result.runId);
     return result;
   } catch (err) {
@@ -512,9 +519,30 @@ ipcMain.handle('pipeline:deleteRun', async (_, { runId }: { runId: string }) => 
   return { success: true };
 });
 
-ipcMain.handle('pipeline:getStageOutput', async (_, { runId, stage }: { runId: string; stage: PipelineStage }) => {
+ipcMain.handle('pipeline:getStageOutput', async (_, { runId, stage }: { runId: string; stage: string }) => {
   const stateStore = getPipelineStateStore();
   return stateStore.getStageOutput(runId, stage);
+});
+
+// Pipeline Analytics IPC Handlers
+ipcMain.handle('pipeline:analytics:getSummary', async (_, { fromTimestamp, toTimestamp }: { fromTimestamp?: number; toTimestamp?: number }) => {
+  const stateStore = getPipelineStateStore();
+  return stateStore.getAnalyticsSummary(fromTimestamp, toTimestamp);
+});
+
+ipcMain.handle('pipeline:analytics:getByTemplate', async (_, { fromTimestamp, toTimestamp }: { fromTimestamp?: number; toTimestamp?: number }) => {
+  const stateStore = getPipelineStateStore();
+  return stateStore.getAnalyticsByTemplate(fromTimestamp, toTimestamp);
+});
+
+ipcMain.handle('pipeline:analytics:getByStage', async (_, { fromTimestamp, toTimestamp }: { fromTimestamp?: number; toTimestamp?: number }) => {
+  const stateStore = getPipelineStateStore();
+  return stateStore.getBottleneckStages(fromTimestamp, toTimestamp);
+});
+
+ipcMain.handle('pipeline:analytics:getByModel', async (_, { fromTimestamp, toTimestamp }: { fromTimestamp?: number; toTimestamp?: number }) => {
+  const stateStore = getPipelineStateStore();
+  return stateStore.getModelPerformance(fromTimestamp, toTimestamp);
 });
 
 ipcMain.handle('pipeline:retryFix', async (_, { runId, suggestions }: { runId: string; suggestions: string[] }) => {
@@ -1010,4 +1038,14 @@ ipcMain.handle('profile:getPersonalityModes', async () => {
 ipcMain.handle('profile:getPersonalityPrompt', async () => {
   const memory = getLongTermMemory();
   return memory.buildPersonalityPrompt();
+});
+
+// ─── Project Onboarding IPC Handler ──────────────────────────────────────────
+
+ipcMain.handle('project:onboard', async (_, { rootPath }: { rootPath: string }) => {
+  const report = await runOnboarding(rootPath);
+  return {
+    report,
+    formatted: formatOnboardingReport(report),
+  };
 });

@@ -5,21 +5,39 @@ import { useWorkspace } from '../../store/WorkspaceContext';
 import { useSettings } from '../../store/SettingsContext';
 import { useAgents } from '../../store/AgentContext';
 import { getSlashCommandHints } from '../../services/command-router';
+import { ollamaService } from '../../services/ollama';
 import type { WorkspaceFile } from '../../store/WorkspaceContext';
 import './Chat.css';
 
+export type PipelineTemplateId = 'quick-fix' | 'standard' | 'deep-review' | 'docs-only' | 'refactor';
+
 interface ChatInputProps {
-  onSend: (message: string, attachments: FileAttachment[], runAsPipeline?: boolean, agentId?: string) => void;
+  onSend: (message: string, attachments: FileAttachment[], runAsPipeline?: boolean, agentId?: string, template?: PipelineTemplateId) => void;
   onStop: () => void;
   isStreaming: boolean;
   disabled: boolean;
   connected?: boolean | null;
   initialValue?: string;
   onCompare?: (prompt?: string) => void;
+  activeModel?: { providerId: string; model: string } | null;
+  onModelChange?: (selection: { providerId: string; model: string } | null) => void;
+}
+
+const ipcRendererLocal = (window as any).ipcRenderer;
+
+const EMBEDDING_PATTERNS = [
+  'embed', 'nomic-embed', 'mxbai-embed', 'all-minilm', 'bge-',
+  'snowflake-arctic-embed', 'e5-', 'gte-', 'jina-embed',
+  'text-embedding', 'voyage-', 'cohere-embed',
+];
+
+function isEmbeddingModel(name: string): boolean {
+  const lower = name.toLowerCase();
+  return EMBEDDING_PATTERNS.some(p => lower.includes(p));
 }
 
 const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function ChatInput(
-  { onSend, onStop, isStreaming, disabled, connected, initialValue = '', onCompare },
+  { onSend, onStop, isStreaming, disabled, connected, initialValue = '', onCompare, activeModel, onModelChange },
   ref
 ) {
   const [input, setInput] = useState(initialValue);
@@ -27,6 +45,7 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
   const [isDragOver, setIsDragOver] = useState(false);
   const [inputMode, setInputMode] = useState<'chat' | 'agent'>('chat');
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = useState<PipelineTemplateId>('standard');
   const { settings } = useSettings();
   const { state: workspace } = useWorkspace();
   const { state: agentState } = useAgents();
@@ -38,6 +57,11 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashQuery, setSlashQuery] = useState('');
   const [slashIndex, setSlashIndex] = useState(0);
+  const [pasteHint, setPasteHint] = useState<{ type: string; label: string } | null>(null);
+  const [isEnhancing, setIsEnhancing] = useState(false);
+  const [showModelPicker, setShowModelPicker] = useState(false);
+  const [providerModels, setProviderModels] = useState<Array<{ id: string; name: string; providerId: string; providerName: string; size?: number }>>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -51,6 +75,15 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
       setSelectedAgentId(agentState.activeAgent.id);
     }
   }, [agentState.activeAgent]);
+
+  useEffect(() => {
+    if (!showModelPicker) return;
+    const handle = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.model-picker-wrapper')) setShowModelPicker(false);
+    };
+    document.addEventListener('click', handle);
+    return () => document.removeEventListener('click', handle);
+  }, [showModelPicker]);
 
   useEffect(() => {
     if (!showWorkspaceHint) return;
@@ -91,7 +124,8 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
     if ((!input.trim() && attachments.length === 0) || disabled) return;
     const isAgent = inputMode === 'agent';
     const agentId = isAgent ? selectedAgentId || undefined : undefined;
-    onSend(input.trim(), attachments, isAgent, agentId);
+    const template = isAgent ? selectedTemplate : undefined;
+    onSend(input.trim(), attachments, isAgent, agentId, template);
     setInput('');
     setAttachments([]);
     setInputMode('chat');
@@ -193,6 +227,134 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
     textareaRef.current?.focus();
   };
 
+  const handleSmartPaste = (e: React.ClipboardEvent) => {
+    const text = e.clipboardData.getData('text/plain');
+    if (!text || text.length < 10) return;
+
+    // Detect content type
+    const detectors: Array<{ type: string; label: string; test: (t: string) => boolean; wrap: (t: string) => string }> = [
+      {
+        type: 'stacktrace',
+        label: 'Stack Trace',
+        test: (t) => /at\s+[\w.]+\s*\(|Traceback|Exception|Error:\s|\.py",\s*line\s+\d+|\.js:\d+:\d+|\.ts:\d+:\d+/m.test(t),
+        wrap: (t) => `I got this error. Help me fix it:\n\n\`\`\`\n${t}\n\`\`\``,
+      },
+      {
+        type: 'json',
+        label: 'JSON',
+        test: (t) => { try { const p = JSON.parse(t.trim()); return typeof p === 'object' && p !== null; } catch { return false; } },
+        wrap: (t) => { try { return `\`\`\`json\n${JSON.stringify(JSON.parse(t.trim()), null, 2)}\n\`\`\``; } catch { return t; } },
+      },
+      {
+        type: 'command',
+        label: 'Terminal Command',
+        test: (t) => /^\s*\$\s+/.test(t) || /^\s*(npm|yarn|pnpm|pip|cargo|go|docker|git|curl|wget|make|sudo)\s+/m.test(t),
+        wrap: (t) => t.replace(/^\s*\$\s*/, ''),
+      },
+      {
+        type: 'url',
+        label: 'URL',
+        test: (t) => /^https?:\/\/\S+$/m.test(t.trim()),
+        wrap: (t) => t,
+      },
+      {
+        type: 'code',
+        label: 'Code Snippet',
+        test: (t) => {
+          const codeSignals = [/^(import|from|const|let|var|function|class|def|fn|pub|package|#include)\s/m, /[{};]\s*$/m, /=>\s*{/m, /\)\s*{/m];
+          return codeSignals.some(r => r.test(t));
+        },
+        wrap: (t) => `\`\`\`\n${t}\n\`\`\``,
+      },
+    ];
+
+    for (const detector of detectors) {
+      if (detector.test(text)) {
+        e.preventDefault();
+        const wrapped = detector.wrap(text);
+        setInput(prev => prev + wrapped);
+        setPasteHint({ type: detector.type, label: detector.label });
+        setTimeout(() => setPasteHint(null), 3000);
+        return;
+      }
+    }
+  };
+
+  const openModelPicker = async () => {
+    if (showModelPicker) { setShowModelPicker(false); return; }
+    setShowModelPicker(true);
+    if (providerModels.length === 0) {
+      setLoadingModels(true);
+      try {
+        const models = await ipcRendererLocal.invoke('provider:listAllModels');
+        setProviderModels(models.filter((m: any) => !isEmbeddingModel(m.id || m.name)));
+      } catch { /* */ }
+      setLoadingModels(false);
+    }
+  };
+
+  const handleEnhancePrompt = async () => {
+    const text = input.trim();
+    if (!text || text.length < 5 || isEnhancing) return;
+
+    setIsEnhancing(true);
+    try {
+      let memoryContext = '';
+      try {
+        memoryContext = await ipcRendererLocal.invoke('memory:buildContext', { query: text });
+      } catch { /* no memories */ }
+
+      const profilePrompt = memoryContext || '';
+
+      const enhanceSystemPrompt = `You are a prompt engineering expert. Your job is to enhance the user's prompt to be more specific, structured, and effective for an AI assistant.
+
+Rules:
+- Keep the user's core intent intact
+- Add specificity: mention output format, edge cases, constraints
+- Add structure: break vague requests into clear steps
+- Keep it concise — don't make it 10x longer, aim for 2-3x
+- If the prompt is about code, specify language, patterns, error handling
+- Maintain the user's tone (casual stays casual, technical stays technical)
+- Return ONLY the enhanced prompt text, no explanations or prefixes
+${profilePrompt}`;
+
+      const result = await ollamaService.chatComplete(
+        activeModel?.providerId || 'ollama-default',
+        activeModel?.model || settings.model,
+        [
+          { role: 'system', content: enhanceSystemPrompt },
+          { role: 'user', content: `Enhance this prompt:\n\n${text}` }
+        ],
+        { temperature: 0.4, max_tokens: 1000 },
+        'prompt_enhance_inline'
+      );
+
+      const enhanced = result.content.trim();
+      if (enhanced && enhanced.length > text.length * 0.5) {
+        setInput(enhanced);
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+        }
+      }
+    } catch (err) {
+      console.error('Prompt enhancement failed:', err);
+    } finally {
+      setIsEnhancing(false);
+    }
+  };
+
+  const modelDisplayName = activeModel
+    ? activeModel.model
+    : settings.model;
+
+  const groupedModels = providerModels.reduce<Record<string, typeof providerModels>>((acc, m) => {
+    const key = m.providerName || m.providerId;
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(m);
+    return acc;
+  }, {});
+
   const filteredFiles: WorkspaceFile[] = workspace.rootPath
     ? workspace.filesIndex.filter(f => {
         if (!mentionQuery) return true;
@@ -267,6 +429,21 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
         </div>
       )}
 
+      {pasteHint && (
+        <div className="smart-paste-hint">
+          <span className="paste-hint-icon">
+            {pasteHint.type === 'stacktrace' && '🔴'}
+            {pasteHint.type === 'json' && '📋'}
+            {pasteHint.type === 'command' && '🖥️'}
+            {pasteHint.type === 'url' && '🔗'}
+            {pasteHint.type === 'code' && '💻'}
+          </span>
+          <span className="paste-hint-label">Detected: {pasteHint.label}</span>
+          {pasteHint.type === 'stacktrace' && <span className="paste-hint-action">Auto-wrapped as error — press Enter to get a fix</span>}
+          {pasteHint.type === 'json' && <span className="paste-hint-action">Auto-formatted as JSON</span>}
+        </div>
+      )}
+
       <div className="input-main-row">
         <div className="input-wrapper">
           {showSlashMenu && filteredSlashHints.length > 0 && (
@@ -304,12 +481,25 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
+            onPaste={handleSmartPaste}
             placeholder={isDragOver ? 'Drop files here...' : 'Message, / for commands, $ for shell, @ for files...'}
             className="chat-textarea"
             rows={1}
             disabled={disabled}
           />
         </div>
+        <button
+          className={`btn-icon enhance-btn ${isEnhancing ? 'enhancing' : ''}`}
+          onClick={handleEnhancePrompt}
+          disabled={!input.trim() || input.trim().length < 5 || isEnhancing || isStreaming}
+          title="Enhance prompt (uses AI + your memories to improve the prompt)"
+        >
+          {isEnhancing ? (
+            <svg className="enhance-spinner" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-5.07l-2.83 2.83M9.76 14.24l-2.83 2.83m11.14 0l-2.83-2.83M9.76 9.76L6.93 6.93"/></svg>
+          ) : (
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/><path d="M19 13l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z"/></svg>
+          )}
+        </button>
         {isStreaming ? (
           <button className="btn-icon stop-btn" onClick={onStop} title="Stop generating">
             <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
@@ -340,10 +530,48 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
           {attachments.length > 0 && (
             <span className="attachment-count">{attachments.length} file(s)</span>
           )}
-          <span className="model-badge">
-            <span className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></span>
-            {settings.model}
-          </span>
+          <div className="model-picker-wrapper">
+            <button className="model-badge model-badge-btn" onClick={openModelPicker} title="Click to change model">
+              <span className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></span>
+              <span className="model-badge-name">{modelDisplayName}</span>
+              <svg className="model-badge-chevron" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+            {showModelPicker && (
+              <div className="model-picker-dropdown">
+                <div className="model-picker-header">
+                  <span>Select Model</span>
+                  {activeModel && (
+                    <button className="model-picker-reset" onClick={() => { onModelChange?.(null); setShowModelPicker(false); }}>
+                      Reset to default
+                    </button>
+                  )}
+                </div>
+                {loadingModels && <div className="model-picker-loading">Loading models...</div>}
+                {!loadingModels && Object.keys(groupedModels).length === 0 && (
+                  <div className="model-picker-loading">No models available. Check Settings → Providers.</div>
+                )}
+                {Object.entries(groupedModels).map(([provider, models]) => (
+                  <div key={provider} className="model-picker-group">
+                    <div className="model-picker-group-label">{provider}</div>
+                    {models.map(m => (
+                      <button
+                        key={`${m.providerId}::${m.id}`}
+                        className={`model-picker-item ${activeModel?.model === m.id && activeModel?.providerId === m.providerId ? 'active' : ''}`}
+                        onClick={() => { onModelChange?.({ providerId: m.providerId, model: m.id }); setShowModelPicker(false); }}
+                      >
+                        <span className="model-picker-item-name">{m.name}</span>
+                        {m.size && (
+                          <span className="model-picker-item-size">
+                            {m.size > 1e9 ? `${(m.size / 1e9).toFixed(1)}GB` : `${Math.round(m.size / 1e6)}MB`}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <div className="input-actions-right">
           <button
@@ -413,23 +641,38 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
             )}
           </div>
           {inputMode === 'agent' && (
-            <select
-              className="agent-selector"
-              value={selectedAgentId || ''}
-              onChange={(e) => setSelectedAgentId(e.target.value || null)}
-              disabled={isStreaming}
-              title={!workspace.rootPath ? 'Open a workspace folder first to use agents' : ''}
-            >
-              {agentState.agents.length === 0 ? (
-                <option value="">No agents available</option>
-              ) : (
-                agentState.agents.map(agent => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.icon} {agent.name}
-                  </option>
-                ))
-              )}
-            </select>
+            <>
+              <select
+                className="agent-selector"
+                value={selectedAgentId || ''}
+                onChange={(e) => setSelectedAgentId(e.target.value || null)}
+                disabled={isStreaming}
+                title={!workspace.rootPath ? 'Open a workspace folder first to use agents' : ''}
+              >
+                {agentState.agents.length === 0 ? (
+                  <option value="">No agents available</option>
+                ) : (
+                  agentState.agents.map(agent => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.icon} {agent.name}
+                    </option>
+                  ))
+                )}
+              </select>
+              <select
+                className="template-selector"
+                value={selectedTemplate}
+                onChange={(e) => setSelectedTemplate(e.target.value as PipelineTemplateId)}
+                disabled={isStreaming}
+                title="Pipeline template"
+              >
+                <option value="standard">🔄 Standard</option>
+                <option value="quick-fix">⚡ Quick Fix</option>
+                <option value="deep-review">🔍 Deep Review</option>
+                <option value="docs-only">📝 Docs Only</option>
+                <option value="refactor">🔧 Refactor</option>
+              </select>
+            </>
           )}
         </div>
       </div>

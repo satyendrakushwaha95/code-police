@@ -19,6 +19,7 @@ export type CommandIntent =
   | 'list_dir'
   | 'remember'
   | 'recall'
+  | 'onboard'
   | 'open_codegen'
   | 'open_refactor'
   | 'open_designdoc'
@@ -69,6 +70,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
   { intent: 'open_usage', patterns: [/^\/usage$/i, /^\/costs$/i] },
   { intent: 'open_compare', patterns: [/^\/compare$/i] },
   { intent: 'new_chat', patterns: [/^\/new$/i, /^\/clear$/i] },
+  { intent: 'onboard', patterns: [/^\/onboard$/i, /^\/analyze$/i, /^\/scan$/i] },
   { intent: 'remember', patterns: [/^\/remember\s+(.+)/i] },
   { intent: 'recall', patterns: [/^\/recall$/i, /^\/memories$/i, /^\/memory$/i] },
 
@@ -122,6 +124,14 @@ const INTENT_PATTERNS: IntentPattern[] = [
     /^(list|show)\s+(me\s+)?(the\s+)?files(\s+in\s+(.+))?$/i,
     /^what('?s|\s+is)\s+in\s+(this\s+)?(folder|directory|dir)\??$/i,
     /^ls$/i,
+  ]},
+  { intent: 'onboard', patterns: [
+    /^onboard\s+(this\s+)?project$/i,
+    /^analyze\s+(this\s+)?(project|codebase|repo)$/i,
+    /^scan\s+(this\s+)?(project|codebase|repo)$/i,
+    /^(explain|understand|describe)\s+(this\s+)?(project|codebase|repo)$/i,
+    /^what\s+is\s+this\s+(project|codebase|repo)\??$/i,
+    /^give\s+me\s+(an?\s+)?(overview|summary)\s+(of\s+)?(this\s+)?(project|codebase|repo)$/i,
   ]},
   { intent: 'remember', patterns: [
     /^remember\s+(that\s+)?(.+)/i,
@@ -230,6 +240,17 @@ export async function routeCommand(
     let displayMessage = '';
 
     switch (intent) {
+      case 'onboard': {
+        // This is handled specially in ChatView — signal it as a UI action
+        return {
+          intent,
+          executed: true,
+          uiAction: 'onboard',
+          originalInput: input,
+          displayMessage: 'Starting project onboarding...',
+        };
+      }
+
       case 'remember': {
         const factContent = input.replace(/^(\/remember|remember|note|save|store|don'?t\s+forget)\s+(that\s+)?/i, '').trim();
         if (!factContent) {
@@ -384,6 +405,7 @@ export function getSlashCommandHints(): Array<{ command: string; description: st
     { command: '/settings', description: 'Open settings' },
     { command: '/usage', description: 'View usage & costs' },
     { command: '/agents', description: 'Manage agents' },
+    { command: '/onboard', description: 'Analyze & onboard current project' },
     { command: '/remember <fact>', description: 'Store a memory' },
     { command: '/recall', description: 'Show all memories' },
     { command: '/new', description: 'New chat' },

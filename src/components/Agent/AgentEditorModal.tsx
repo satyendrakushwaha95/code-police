@@ -4,6 +4,7 @@ import { useToast } from '../../hooks/useToast';
 import ToolPicker from './ToolPicker';
 import KnowledgeUploader from './KnowledgeUploader';
 import AgentTestConsole from './AgentTestConsole';
+import AgentGenerateBar, { type GeneratedAgentConfig } from './AgentGenerateBar';
 import './Agent.css';
 
 const ipcRenderer = (window as any).ipcRenderer;
@@ -68,9 +69,8 @@ When generating code:
     enabledTools: [
       { toolId: 'read_file', enabled: true },
       { toolId: 'write_file', enabled: true },
-      { toolId: 'edit_file', enabled: true },
       { toolId: 'list_directory', enabled: true },
-      { toolId: 'search_files', enabled: true },
+      { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
       allowedFilePatterns: ['*', '**/*', '*.html', '*.css', '*.scss', '*.ts', '*.tsx', '*.js', '*.jsx', '*.json', '*.md', '**/*.html', '**/*.css', '**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
@@ -97,9 +97,8 @@ Your expertise includes:
     enabledTools: [
       { toolId: 'read_file', enabled: true },
       { toolId: 'write_file', enabled: true },
-      { toolId: 'edit_file', enabled: true },
       { toolId: 'list_directory', enabled: true },
-      { toolId: 'search_files', enabled: true },
+      { toolId: 'grep_search', enabled: true },
       { toolId: 'execute_command', enabled: true },
     ],
     constraints: {
@@ -131,7 +130,7 @@ When reviewing code:
     enabledTools: [
       { toolId: 'read_file', enabled: true },
       { toolId: 'list_directory', enabled: true },
-      { toolId: 'search_files', enabled: true },
+      { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
       allowedFilePatterns: ['*', '**/*', '*.ts', '*.tsx', '*.js', '*.jsx', '*.py', '*.go', '*.java', '*.md', '**/*.ts', '**/*.js', '**/*.py'],
@@ -162,7 +161,7 @@ When auditing code:
     enabledTools: [
       { toolId: 'read_file', enabled: true },
       { toolId: 'list_directory', enabled: true },
-      { toolId: 'search_files', enabled: true },
+      { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
       allowedFilePatterns: ['*', '**/*', '*.ts', '*.tsx', '*.js', '*.jsx', '*.py', '*.java', '*.md', '**/*.ts', '**/*.js', '**/*.py'],
@@ -193,9 +192,8 @@ When generating configurations:
     enabledTools: [
       { toolId: 'read_file', enabled: true },
       { toolId: 'write_file', enabled: true },
-      { toolId: 'edit_file', enabled: true },
       { toolId: 'list_directory', enabled: true },
-      { toolId: 'search_files', enabled: true },
+      { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
       allowedFilePatterns: ['*', '**/*', 'Dockerfile', 'docker-compose*.yml', '*.yaml', '*.yml', '*.json', '*.tf', '*.sh', 'Makefile', '**/Dockerfile', '**/*.yaml', '**/*.yml'],
@@ -226,9 +224,8 @@ When generating code:
     enabledTools: [
       { toolId: 'read_file', enabled: true },
       { toolId: 'write_file', enabled: true },
-      { toolId: 'edit_file', enabled: true },
       { toolId: 'list_directory', enabled: true },
-      { toolId: 'search_files', enabled: true },
+      { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
       allowedFilePatterns: ['*', '**/*', '*.py', '*.sql', '*.yaml', '*.yml', '*.json', '*.scala', '*.java', '**/*.py', '**/*.sql', '**/*.yaml'],
@@ -259,9 +256,8 @@ When writing documentation:
     enabledTools: [
       { toolId: 'read_file', enabled: true },
       { toolId: 'write_file', enabled: true },
-      { toolId: 'edit_file', enabled: true },
       { toolId: 'list_directory', enabled: true },
-      { toolId: 'search_files', enabled: true },
+      { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
       allowedFilePatterns: ['*', '**/*', '*.md', '*.txt', '*.rst', '*.html', '*.tex', '**/*.md'],
@@ -289,6 +285,7 @@ export default function AgentEditorModal({ agent, onClose }: AgentEditorModalPro
     enabledTools: agent?.enabledTools || [],
     constraints: agent?.constraints ? { ...agent.constraints } : undefined,
     pipelineStages: agent?.pipelineStages ? { ...agent.pipelineStages } : undefined,
+    conversationStarters: agent?.conversationStarters || [],
   });
 
   const [knowledgeFiles, setKnowledgeFiles] = useState<any[]>(agent?.knowledgeBase?.files || []);
@@ -312,6 +309,39 @@ export default function AgentEditorModal({ agent, onClose }: AgentEditorModalPro
     };
     fetchModels();
   }, []);
+
+  const applyGenerated = useCallback((config: GeneratedAgentConfig) => {
+    setFormData(prev => ({
+      ...prev,
+      name: config.name,
+      description: config.description,
+      icon: config.icon,
+      tags: config.tags || [],
+      systemPrompt: config.systemPrompt,
+      enabledTools: (config.enabledTools || []).map(t => ({ toolId: t, enabled: true })),
+      constraints: {
+        allowedFilePatterns: config.allowedFilePatterns || ['*', '**/*'],
+        blockedFilePatterns: config.blockedFilePatterns || ['*.env', 'node_modules/**', '.git/**'],
+        maxFileSize: 10485760,
+        allowedLanguages: config.allowedLanguages || [],
+        requireApproval: config.requireApproval ?? true,
+        autoExecute: false,
+      },
+      pipelineStages: config.pipelineStages ? {
+        stages: {
+          plan: { enabled: config.pipelineStages.plan ?? true },
+          action: { enabled: config.pipelineStages.action ?? true },
+          review: { enabled: config.pipelineStages.review ?? true },
+          validate: { enabled: config.pipelineStages.validate ?? true },
+          execute: { enabled: config.pipelineStages.execute ?? true },
+        },
+        maxRetries: 2,
+        timeoutMs: 600000,
+      } : prev.pipelineStages,
+      conversationStarters: config.conversationStarters || [],
+    }));
+    showToast(`Agent "${config.name}" generated! Review and save.`, 'success');
+  }, [showToast]);
 
   const applyPreset = useCallback((preset: AgentPreset) => {
     setPresetId(preset.id);
@@ -413,165 +443,54 @@ export default function AgentEditorModal({ agent, onClose }: AgentEditorModalPro
   }, [handleAddTag]);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-content agent-editor-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>{isEditing ? 'Edit Agent' : 'Create New Agent'}</h2>
-          <button className="btn-icon" onClick={onClose}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18" />
-              <line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="tabs">
-          <button
-            className={`tab ${activeTab === 'basic' ? 'active' : ''}`}
-            onClick={() => setActiveTab('basic')}
-          >
-            Basic Info
-          </button>
-          <button
-            className={`tab ${activeTab === 'prompt' ? 'active' : ''}`}
-            onClick={() => setActiveTab('prompt')}
-          >
-            System Prompt
-          </button>
-          <button
-            className={`tab ${activeTab === 'tools' ? 'active' : ''}`}
-            onClick={() => setActiveTab('tools')}
-          >
-            Tools
-          </button>
-          <button
-            className={`tab ${activeTab === 'knowledge' ? 'active' : ''}`}
-            onClick={() => setActiveTab('knowledge')}
-          >
-            Knowledge
-          </button>
-          <button
-            className={`tab ${activeTab === 'advanced' ? 'active' : ''}`}
-            onClick={() => setActiveTab('advanced')}
-          >
-            Advanced
-          </button>
-        </div>
-        {isEditing && agent && (
-          <div className="modal-actions">
-            <button className="btn btn-sm" onClick={() => setShowTestConsole(true)}>
-              Test Agent
+          <h2>{isEditing ? `Edit: ${formData.name || 'Agent'}` : 'Create New Agent'}</h2>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {isEditing && agent && (
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowTestConsole(true)}>Test</button>
+            )}
+            <button className="btn-icon" onClick={onClose}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
             </button>
           </div>
+        </div>
+
+        {!isEditing && (
+          <AgentGenerateBar onGenerated={applyGenerated} />
         )}
 
-        <div className="modal-body">
-          {activeTab === 'basic' && !isEditing && (
-            <div className="form-section presets-section">
-              <div className="form-group">
-                <label>Start from a preset (optional)</label>
-                <div className="presets-grid">
-                  <button
-                    className={`preset-card ${!presetId ? 'selected' : ''}`}
-                    onClick={() => {
-                      setPresetId(undefined);
-                      setFormData(prev => ({
-                        ...prev,
-                        name: prev.name || '',
-                        description: prev.description || '',
-                        icon: prev.icon || '🤖',
-                        systemPrompt: prev.systemPrompt || DEFAULT_SYSTEM_PROMPT,
-                        defaultModel: prev.defaultModel || 'qwen3-coder:480b-cloud',
-                        enabledTools: prev.enabledTools || [],
-                        constraints: prev.constraints || undefined,
-                      }));
-                    }}
-                  >
-                    <span className="preset-icon">✨</span>
-                    <span className="preset-name">Blank Agent</span>
-                    <span className="preset-desc">Start from scratch</span>
-                  </button>
-                  <button
-                    className={`preset-card ${presetId === 'preset-web-developer' ? 'selected' : ''}`}
-                    onClick={() => {
-                      const preset = PRESETS.find(p => p.id === 'preset-web-developer');
-                      if (preset) applyPreset(preset);
-                    }}
-                  >
-                    <span className="preset-icon">🌐</span>
-                    <span className="preset-name">Web Developer</span>
-                    <span className="preset-desc">React, Vue, Angular</span>
-                  </button>
-                  <button
-                    className={`preset-card ${presetId === 'preset-backend-developer' ? 'selected' : ''}`}
-                    onClick={() => {
-                      const preset = PRESETS.find(p => p.id === 'preset-backend-developer');
-                      if (preset) applyPreset(preset);
-                    }}
-                  >
-                    <span className="preset-icon">⚙️</span>
-                    <span className="preset-name">Backend Developer</span>
-                    <span className="preset-desc">APIs, microservices</span>
-                  </button>
-                  <button
-                    className={`preset-card ${presetId === 'preset-code-reviewer' ? 'selected' : ''}`}
-                    onClick={() => {
-                      const preset = PRESETS.find(p => p.id === 'preset-code-reviewer');
-                      if (preset) applyPreset(preset);
-                    }}
-                  >
-                    <span className="preset-icon">🔍</span>
-                    <span className="preset-name">Code Reviewer</span>
-                    <span className="preset-desc">Quality & best practices</span>
-                  </button>
-                  <button
-                    className={`preset-card ${presetId === 'preset-security-auditor' ? 'selected' : ''}`}
-                    onClick={() => {
-                      const preset = PRESETS.find(p => p.id === 'preset-security-auditor');
-                      if (preset) applyPreset(preset);
-                    }}
-                  >
-                    <span className="preset-icon">🔒</span>
-                    <span className="preset-name">Security Auditor</span>
-                    <span className="preset-desc">Vulnerability detection</span>
-                  </button>
-                  <button
-                    className={`preset-card ${presetId === 'preset-devops-engineer' ? 'selected' : ''}`}
-                    onClick={() => {
-                      const preset = PRESETS.find(p => p.id === 'preset-devops-engineer');
-                      if (preset) applyPreset(preset);
-                    }}
-                  >
-                    <span className="preset-icon">🚀</span>
-                    <span className="preset-name">DevOps Engineer</span>
-                    <span className="preset-desc">CI/CD, Docker, K8s</span>
-                  </button>
-                  <button
-                    className={`preset-card ${presetId === 'preset-data-engineer' ? 'selected' : ''}`}
-                    onClick={() => {
-                      const preset = PRESETS.find(p => p.id === 'preset-data-engineer');
-                      if (preset) applyPreset(preset);
-                    }}
-                  >
-                    <span className="preset-icon">📊</span>
-                    <span className="preset-name">Data Engineer</span>
-                    <span className="preset-desc">Pipelines, ETL</span>
-                  </button>
-                  <button
-                    className={`preset-card ${presetId === 'preset-technical-writer' ? 'selected' : ''}`}
-                    onClick={() => {
-                      const preset = PRESETS.find(p => p.id === 'preset-technical-writer');
-                      if (preset) applyPreset(preset);
-                    }}
-                  >
-                    <span className="preset-icon">📝</span>
-                    <span className="preset-name">Technical Writer</span>
-                    <span className="preset-desc">Docs, README</span>
-                  </button>
-                </div>
-              </div>
+        <div className="agent-builder-body">
+          {/* Preset sidebar */}
+          {!isEditing && (
+            <div className="agent-builder-sidebar">
+              <div className="preset-sidebar-label">Presets</div>
+              <button className={`preset-sidebar-item ${!presetId ? 'active' : ''}`} onClick={() => { setPresetId(undefined); }}>
+                <span className="preset-sidebar-icon">✨</span>
+                <span className="preset-sidebar-name">Blank</span>
+              </button>
+              {PRESETS.map(p => (
+                <button key={p.id} className={`preset-sidebar-item ${presetId === p.id ? 'active' : ''}`} onClick={() => applyPreset(p)}>
+                  <span className="preset-sidebar-icon">{p.icon}</span>
+                  <span className="preset-sidebar-name">{p.name}</span>
+                </button>
+              ))}
             </div>
           )}
+
+          <div className="agent-builder-main">
+            <div className="tabs">
+              <button className={`tab ${activeTab === 'basic' ? 'active' : ''}`} onClick={() => setActiveTab('basic')}>Identity</button>
+              <button className={`tab ${activeTab === 'prompt' ? 'active' : ''}`} onClick={() => setActiveTab('prompt')}>Prompt</button>
+              <button className={`tab ${activeTab === 'tools' ? 'active' : ''}`} onClick={() => setActiveTab('tools')}>Tools</button>
+              <button className={`tab ${activeTab === 'knowledge' ? 'active' : ''}`} onClick={() => setActiveTab('knowledge')}>Knowledge</button>
+              <button className={`tab ${activeTab === 'advanced' ? 'active' : ''}`} onClick={() => setActiveTab('advanced')}>Pipeline</button>
+            </div>
+
+            <div className="modal-body">
           {activeTab === 'basic' && (
             <div className="form-section">
               <div className="form-group">
@@ -667,6 +586,37 @@ export default function AgentEditorModal({ agent, onClose }: AgentEditorModalPro
                   </div>
                 )}
               </div>
+
+              <div className="form-group">
+                <label>Conversation Starters</label>
+                <p className="help-text">Suggested prompts shown when this agent is selected in chat.</p>
+                <div className="starters-list">
+                  {(formData.conversationStarters || []).map((s, i) => (
+                    <div key={i} className="starter-item">
+                      <input
+                        type="text"
+                        value={s}
+                        onChange={e => {
+                          const updated = [...(formData.conversationStarters || [])];
+                          updated[i] = e.target.value;
+                          setFormData(prev => ({ ...prev, conversationStarters: updated }));
+                        }}
+                        placeholder="e.g. Build a login form with React"
+                      />
+                      <button className="btn-icon btn-sm" onClick={() => {
+                        setFormData(prev => ({ ...prev, conversationStarters: (prev.conversationStarters || []).filter((_, j) => j !== i) }));
+                      }}>
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      </button>
+                    </div>
+                  ))}
+                  {(formData.conversationStarters || []).length < 5 && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => {
+                      setFormData(prev => ({ ...prev, conversationStarters: [...(prev.conversationStarters || []), ''] }));
+                    }}>+ Add Starter</button>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
@@ -682,9 +632,20 @@ export default function AgentEditorModal({ agent, onClose }: AgentEditorModalPro
                   value={formData.systemPrompt}
                   onChange={(e) => handleInputChange('systemPrompt', e.target.value)}
                   placeholder="You are a helpful AI assistant..."
-                  rows={15}
+                  rows={12}
                   className="code-textarea"
                 />
+                <div className="prompt-preview-bar">
+                  <span className="prompt-preview-stat">
+                    ~{Math.ceil((formData.systemPrompt?.length || 0) / 4)} tokens
+                  </span>
+                  <span className="prompt-preview-stat">
+                    {(formData.systemPrompt?.length || 0).toLocaleString()} chars
+                  </span>
+                  <span className="prompt-preview-stat">
+                    {(formData.systemPrompt?.split('\n').length || 0)} lines
+                  </span>
+                </div>
               </div>
             </div>
           )}
@@ -816,19 +777,19 @@ export default function AgentEditorModal({ agent, onClose }: AgentEditorModalPro
               </div>
             </div>
           )}
-        </div>
+            </div>
 
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={isSaving || !formData.name.trim()}
-          >
-            {isSaving ? 'Saving...' : (isEditing ? 'Update Agent' : 'Create Agent')}
-          </button>
+            <div className="agent-builder-footer">
+              <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                onClick={handleSave}
+                disabled={isSaving || !formData.name.trim()}
+              >
+                {isSaving ? 'Saving...' : (isEditing ? 'Update Agent' : 'Create Agent')}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

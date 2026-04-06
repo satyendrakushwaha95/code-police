@@ -1,9 +1,9 @@
 import { useState, useCallback } from 'react';
-import type { StageResult, ReviewResult, CodeOutput, ExecuteResult, ValidationResult } from '../../hooks/usePipeline';
+import type { StageResult, ReviewResult, CodeOutput, ExecuteResult, ValidationResult, ResearchResult, SecurityResult } from '../../hooks/usePipeline';
 import './StageCard.css';
 
 interface StageCardProps {
-  stage: 'plan' | 'action' | 'review' | 'validate' | 'execute';
+  stage: string;
   result?: StageResult<any>;
   attempt?: number;
 }
@@ -13,7 +13,9 @@ const STAGE_LABELS: Record<string, string> = {
   action: 'Action',
   review: 'Review',
   validate: 'Validate',
-  execute: 'Execute'
+  execute: 'Execute',
+  research: 'Research',
+  security: 'Security',
 };
 
 function getLanguageFromPath(filePath: string): string {
@@ -30,7 +32,7 @@ function getLanguageFromPath(filePath: string): string {
 function CodeBlock({ code, language }: { code: string; language: string }) {
   const lines = code.split('\n');
   const lineCount = lines.length;
-  
+
   const copyToClipboard = useCallback(() => {
     navigator.clipboard.writeText(code);
   }, [code]);
@@ -90,6 +92,9 @@ export default function StageCard({ stage, result, attempt }: StageCardProps) {
     if (status === 'failed') {
       return <span className="status-icon failed">&#10007;</span>;
     }
+    if (status === 'skipped') {
+      return <span className="status-icon skipped">&#8856;</span>;
+    }
     return null;
   };
 
@@ -142,7 +147,7 @@ export default function StageCard({ stage, result, attempt }: StageCardProps) {
             <div className="code-summary">{codeOutput.summary}</div>
           )}
         </div>
-        
+
         <div className="file-tabs">
           {codeOutput.file_changes.map((file, idx) => (
             <button
@@ -160,16 +165,16 @@ export default function StageCard({ stage, result, attempt }: StageCardProps) {
 
         <div className="file-changes-list">
           {codeOutput.file_changes.map((file, idx) => (
-            <div 
-              key={idx} 
+            <div
+              key={idx}
               className={`file-change-item ${file.operation} ${expandedFiles.has(idx) ? 'expanded' : 'collapsed'}`}
             >
               {expandedFiles.has(idx) && (
                 <>
                   <div className="file-change-header">
                     <span className={`operation-badge ${file.operation}`}>
-                      {file.operation === 'create' ? 'New' : 
-                       file.operation === 'modify' ? 'Mod' : 
+                      {file.operation === 'create' ? 'New' :
+                       file.operation === 'modify' ? 'Mod' :
                        'Del'}
                     </span>
                     <span className="file-path">{file.file_path}</span>
@@ -178,9 +183,9 @@ export default function StageCard({ stage, result, attempt }: StageCardProps) {
                     <div className="file-explanation">{file.explanation}</div>
                   )}
                   {file.content && (
-                    <CodeBlock 
-                      code={file.content} 
-                      language={getLanguageFromPath(file.file_path)} 
+                    <CodeBlock
+                      code={file.content}
+                      language={getLanguageFromPath(file.file_path)}
                     />
                   )}
                 </>
@@ -195,7 +200,7 @@ export default function StageCard({ stage, result, attempt }: StageCardProps) {
   const renderExecuteResults = () => {
     if (!output || stage !== 'execute') return null;
     const executeResult = output as ExecuteResult;
-    
+
     return (
       <div className="execute-results">
         {executeResult.executed_files.length > 0 && (
@@ -228,7 +233,7 @@ export default function StageCard({ stage, result, attempt }: StageCardProps) {
   const renderValidationResults = () => {
     if (!output || stage !== 'validate') return null;
     const validationResult = output as ValidationResult;
-    
+
     return (
       <div className="validation-results">
         <div className={`validation-badge ${validationResult.passed ? 'pass' : 'fail'}`}>
@@ -257,6 +262,92 @@ export default function StageCard({ stage, result, attempt }: StageCardProps) {
     );
   };
 
+  const renderResearchResults = () => {
+    if (!output || stage !== 'research') return null;
+    const researchResult = output as ResearchResult;
+
+    return (
+      <div className="research-results">
+        <div className="research-summary">{researchResult.summary}</div>
+        {researchResult.key_findings.length > 0 && (
+          <div className="findings-section">
+            <h4 className="issues-title">Key Findings ({researchResult.key_findings.length})</h4>
+            <ul className="findings-list">
+              {researchResult.key_findings.map((f, idx) => (
+                <li key={idx}>{f}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {researchResult.relevant_patterns.length > 0 && (
+          <div className="findings-section">
+            <h4 className="issues-title">Patterns Detected</h4>
+            <div className="pattern-tags">
+              {researchResult.relevant_patterns.map((p, idx) => (
+                <span key={idx} className="pattern-tag">{p}</span>
+              ))}
+            </div>
+          </div>
+        )}
+        {researchResult.files_examined.length > 0 && (
+          <div className="findings-section">
+            <h4 className="issues-title">Files Examined ({researchResult.files_examined.length})</h4>
+            <ul className="files-examined-list">
+              {researchResult.files_examined.map((f, idx) => (
+                <li key={idx}>{f}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderSecurityResults = () => {
+    if (!output || stage !== 'security') return null;
+    const securityResult = output as SecurityResult;
+    const scoreColor = securityResult.score > 80 ? 'green' : securityResult.score > 50 ? 'yellow' : 'red';
+
+    return (
+      <div className="security-results">
+        <div className={`security-score-badge ${scoreColor}`}>
+          <span className="score-value">{securityResult.score}</span>
+          <span className="score-label">/100</span>
+        </div>
+        <div className="security-summary">{securityResult.summary}</div>
+        {securityResult.vulnerabilities.length > 0 && (
+          <div className="vulnerability-section">
+            <h4 className="issues-title">Vulnerabilities ({securityResult.vulnerabilities.length})</h4>
+            {securityResult.vulnerabilities.map((v, idx) => (
+              <div key={idx} className={`issue-item ${v.severity === 'critical' || v.severity === 'high' ? 'error' : v.severity === 'medium' ? 'warning' : 'info'}`}>
+                <span className={`severity-badge sev-${v.severity}`}>{v.severity}</span>
+                <div className="issue-content">
+                  <span className="issue-desc">{v.description}</span>
+                  <span className="issue-file">{v.file}{v.line ? `:${v.line}` : ''}</span>
+                  {v.recommendation && (
+                    <span className="vuln-recommendation">{v.recommendation}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {securityResult.dependency_issues.length > 0 && (
+          <div className="dependency-issues-section">
+            <h4 className="issues-title">Dependency Issues ({securityResult.dependency_issues.length})</h4>
+            {securityResult.dependency_issues.map((d, idx) => (
+              <div key={idx} className="issue-item warning">
+                <div className="issue-content">
+                  <span className="issue-desc"><strong>{d.package}</strong>: {d.issue}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderValidationBadge = () => {
     if (!output || stage !== 'validate') return null;
     const validationResult = output as ValidationResult;
@@ -267,18 +358,40 @@ export default function StageCard({ stage, result, attempt }: StageCardProps) {
     );
   };
 
+  const renderSecurityBadge = () => {
+    if (!output || stage !== 'security') return null;
+    const securityResult = output as SecurityResult;
+    return (
+      <div className={`verdict-badge ${securityResult.verdict === 'PASS' ? 'pass' : 'fail'}`}>
+        {securityResult.verdict} ({securityResult.score}/100)
+      </div>
+    );
+  };
+
   const formatDuration = () => {
     if (!durationMs) return '';
     if (durationMs < 1000) return `${durationMs}ms`;
     return `${(durationMs / 1000).toFixed(1)}s`;
   };
 
+  if (status === 'skipped') {
+    return (
+      <div className="stage-card skipped">
+        <div className="stage-header">
+          <span className="stage-icon">{getStatusIcon()}</span>
+          <span className="stage-name">{STAGE_LABELS[stage] || stage}</span>
+          <span className="skipped-reason" title={error || 'Skipped'}>Skipped</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`stage-card ${status}`}>
       <div className="stage-header" onClick={() => setShowOutput(!showOutput)}>
         {getStatusIcon() && <span className="stage-icon">{getStatusIcon()}</span>}
         <span className="stage-name">
-          {STAGE_LABELS[stage]}
+          {STAGE_LABELS[stage] || stage}
           {attempt && attempt > 1 && <span className="attempt-badge">Attempt {attempt}</span>}
         </span>
         {modelUsed && <span className="model-badge">{modelUsed}</span>}
@@ -287,6 +400,7 @@ export default function StageCard({ stage, result, attempt }: StageCardProps) {
         )}
         {renderVerdict()}
         {renderValidationBadge()}
+        {renderSecurityBadge()}
         <button className="toggle-output-btn">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="14" height="14">
             {showOutput ? <polyline points="6 9 12 15 18 9"/> : <polyline points="9 18 15 12 9 6"/>}
@@ -296,7 +410,7 @@ export default function StageCard({ stage, result, attempt }: StageCardProps) {
 
       {showOutput && (
         <div className="stage-output">
-          {error ? (
+          {error && status !== 'skipped' ? (
             <div className="error-box">
               <strong>Error:</strong> {error}
             </div>
@@ -305,12 +419,14 @@ export default function StageCard({ stage, result, attempt }: StageCardProps) {
               {renderCodeChanges()}
               {renderValidationResults()}
               {renderExecuteResults()}
-              {stage !== 'action' && stage !== 'execute' && stage !== 'validate' && (
+              {renderResearchResults()}
+              {renderSecurityResults()}
+              {stage !== 'action' && stage !== 'execute' && stage !== 'validate' && stage !== 'research' && stage !== 'security' && (
                 <div className="output-json-container">
                   <div className="output-json-header">
                     <span>Output</span>
-                    <button 
-                      className="copy-btn" 
+                    <button
+                      className="copy-btn"
                       onClick={() => navigator.clipboard.writeText(JSON.stringify(output, null, 2))}
                       title="Copy to clipboard"
                     >

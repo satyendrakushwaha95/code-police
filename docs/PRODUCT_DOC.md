@@ -59,17 +59,22 @@ The dashboard provides quick access to all features with a developer-first desig
 - Color-coded: green (<60%), yellow (60-80%), red (>80%)
 
 **Chat Input Layout:**
-- **Top row:** Textarea with send button inside
-- **Bottom row:** Attachment button | Model badge (with status) | Compare button | Chat | Send to Agent buttons
+- **Top row:** Textarea with send button and prompt enhance (✨) button inside
+- **Bottom row:** Attachment button | Model badge (clickable — opens in-chat model picker) | Compare button | Chat | Send to Agent buttons
 - **Slash command autocomplete:** Type `/` to see a dropdown of available slash commands with descriptions
+- **In-chat model picker:** Click the model badge to switch models — dropdown groups all models by provider, embedding models are filtered out
+- **Prompt enhance:** Click sparkle button to have AI rewrite and improve your prompt before sending
+- **Smart paste:** Pasting auto-detects content type (stack trace, JSON, URL, code) and shows a hint label
 - **Agent dropdown:** Shows when Send to Agent is active, displays all available agents
+- **Template selector:** When Send to Agent is active, a template dropdown lets you pick the pipeline profile (Standard, Quick Fix, Deep Review, Docs Only, Refactor)
 
 **Send to Agent Mode:**
 - Click "Send to Agent" to switch to agentic mode
 - Agent dropdown appears with all custom agents
-- Select an agent or use the default
-- Type your task and send
-- Pipeline executes through all stages automatically
+- Template dropdown appears to select pipeline profile
+- Select an agent and template, type your task, and send
+- Pipeline executes through the configured stages automatically
+- Chat status message shows the template name (e.g., "Task moved to Pipeline (deep-review)")
 
 ### 2. Agentic Tasks (Pipeline)
 
@@ -78,18 +83,40 @@ Instead of a separate window, the pipeline is now integrated into the chat exper
 **How it works:**
 1. Click "Send to Agent" button in chat input
 2. Select an agent from the dropdown (or use default)
-3. Type your task and send
-4. The AI autonomously runs through the pipeline stages:
-   - **Plan** - Analyzes task and creates execution plan
-   - **Action** - Generates or modifies code (renamed from "Code")
-   - **Review** - Reviews code quality and issues
-   - **Validate** - Runs tests and validation
-   - **Execute** - Applies changes to files
+3. Select a pipeline template (Standard, Quick Fix, Deep Review, Docs Only, Refactor)
+4. Type your task and send
+5. The AI autonomously runs through the template's configured stages
+
+**Pipeline Templates:**
+
+| Template | Stages | Use Case |
+|----------|--------|----------|
+| **Standard** | Plan → Action → Review → Validate → Execute | Default for most tasks |
+| **Quick Fix** | Plan → Action → Execute | Fast bug fixes, skips review |
+| **Deep Review** | Research → Plan → Action → Review → Security → Validate → Execute | Thorough review with security audit |
+| **Docs Only** | Research → Plan → Action → Review | Documentation tasks, no code execution |
+| **Refactor** | Research → Action → Review → Validate → Execute | Code restructuring with safety checks |
+
+**Pipeline Stages:**
+- **Research** — Analyzes project structure, discovers entry points, configs, and patterns (uses static analysis + LLM)
+- **Plan** — Analyzes task and creates execution plan
+- **Action** — Generates or modifies code based on plan
+- **Review** — Reviews code quality and issues
+- **Security** — Scans for vulnerabilities (hardcoded secrets, injection, XSS, SQL injection), runs `npm audit`, LLM security review, produces a 0-100 score
+- **Validate** — Tests correctness against acceptance criteria
+- **Execute** — Applies changes to files
+
+**Graph-Based Execution:**
+- Pipeline execution is driven by a directed graph, not a fixed sequence
+- Each stage has configurable failure behavior: stop, retry, skip, or replan
+- Per-stage retry counters (action retries don't consume review's budget)
+- Replan circuit breaker (max 2 replans) prevents infinite loops
+- Stage conditions can skip stages dynamically
 
 **Smart Task Detection:**
 - Planner automatically detects task type
 - Documentation-only tasks (PRD, README, specs) only generate documents
-- Code tasks generate implementation files
+- Optional `smartSkip` — when enabled, auto-skips validate/execute for doc-only tasks
 - Avoids unnecessary code generation for documentation requests
 
 **Stop Pipeline:**
@@ -99,47 +126,66 @@ Instead of a separate window, the pipeline is now integrated into the chat exper
 - Previous error is included in retry feedback
 
 **Retry Logic:**
-- Max 2 auto-attempts before manual review
+- Max 2 auto-attempts per stage before manual review
 - Manual retry with suggestions from review
 - User can provide additional feedback during retry
 - Project root stored with pipeline data for security checks
 
 **Pipeline Dashboard:**
 - Access via "Task Pipeline" button in sidebar
-- Single view (no tabs) - all pipelines in one list
+- Two tabs: **Runs** (pipeline list) and **Analytics** (performance insights)
 - Auto-refresh every 5 seconds
 - Manual refresh button available
 - Real-time status updates
-- Visual progress bar with pill-shaped stage indicators
+- Visual progress bar with dynamic pill-shaped stage indicators based on template
+- Template badge shown on each pipeline run
 
 ### 3. Task Pipeline Dashboard
 
 Monitor all pipeline tasks in a unified view:
 
 **Features:**
+- Two tabs: **Runs** and **Analytics**
 - Auto-refresh every 5 seconds
 - Running pipelines appear at the top
 - Expandable pipeline items
 - Real-time execution summary with timer
 - Visual progress bar showing completion
-- Pill-shaped stage indicators connected with lines
+- Dynamic pill-shaped stage indicators based on template (not hardcoded)
+- Template badge on each run (e.g., "quick-fix", "deep-review")
 
 **Pipeline Stage Display:**
-Each stage (Plan, Action, Review, Validate, Execute) is displayed as a pill badge:
+Stages are displayed as pill badges, dynamically rendered from the run's `stage_order`:
 - **Pending**: Numbered circle (1, 2, 3...)
 - **Running**: Spinning indicator with pulsing border
 - **Complete**: Green checkmark (✓)
 - **Failed**: Red X (✗)
+- **Skipped**: Dimmed circle (⊘)
 
-**Progress Bar:**
-- Visual progress bar above stage pills
-- Blue-to-green gradient fill
-- Shows completion based on completed stages
+**Research Stage Card:**
+- Files examined list
+- Key findings as bullet points
+- Detected patterns as tags
+- Summary text
+
+**Security Stage Card:**
+- Security score badge (color-coded: green >80, yellow 50-80, red <50)
+- Vulnerability list with severity badges (critical, high, medium, low)
+- Dependency issues from `npm audit`
+- Recommendations for each finding
+
+**Analytics Tab:**
+- Time range filters: 7 Days, 30 Days, All Time
+- Summary cards: Success Rate, Avg Duration, Total Runs, Avg Retries
+- Template Performance table: per-template success rate, avg time, count
+- Stage Bottlenecks: horizontal bar chart showing avg duration per stage with failure rates
+- Model Performance table: per-model success rate, avg time, run count
 
 Each task shows:
 - Status badge (running, complete, failed, cancelled)
+- Template pill (if non-standard)
 - Task description
-- Pill-shaped progress indicator with stage labels
+- Dynamic progress indicator with stage labels
 - Duration timer
 - Expandable details with stage cards
 
@@ -406,6 +452,7 @@ Type naturally in the chat input and commands execute directly — no buttons re
 | `/agents` | Manage agents |
 | `/remember <fact>` | Store a memory |
 | `/recall` | Show all memories |
+| `/onboard` | Onboard/analyze current project |
 | `/new` | New chat |
 
 **Natural Language Examples:**
@@ -415,6 +462,7 @@ Type naturally in the chat input and commands execute directly — no buttons re
 - `commit with message "fix login bug"` → commits with that message
 - `open settings` → opens the settings panel
 - `show usage` → opens the usage dashboard
+- `onboard this project` → analyzes and onboards the current codebase
 
 **Slash Command Autocomplete:**
 - Type `/` in the chat input to see a dropdown of available commands with descriptions
@@ -503,6 +551,147 @@ Quick access to any action from anywhere in the app.
 - System-wide hotkey — summons the app even when minimized or in the background
 - Triggers the `jarvis:summon` IPC event
 
+### 18. Project Onboarding
+
+Point at any project directory and get a comprehensive analysis — no LLM required for the static pass, with an optional AI-powered architecture deep dive.
+
+**How to Trigger:**
+- Type `/onboard` in chat
+- Natural language: "onboard this project", "analyze this codebase", "scan this repo"
+- Click the "Onboard" tile on the dashboard
+
+**What It Generates:**
+
+| Section | Description |
+|---------|-------------|
+| Tech Stack | Framework, language, build tool, package manager, runtime, styling, DB, testing libs |
+| Architecture Overview | LLM-generated 3–5 sentence description of project structure and data flow |
+| Mermaid Diagram | Auto-generated `graph TD` architecture diagram (5–12 nodes) |
+| Key Files Map | Important files grouped by role (Entry Points, API Layer, Data Layer, Config) |
+| API Surface | Detected API routes (REST, GraphQL endpoints, controller files) |
+| Code Health | File counts, lines of code, test coverage ratio, largest files, detected patterns |
+| Directory Tree | Top 3 levels of the project directory |
+
+**Two-Phase Analysis:**
+1. **Static Analysis (instant, no LLM):** Framework detection (30+ frameworks), language detection, database/styling/testing library detection, entry point and API route discovery, config file listing, file statistics, pattern detection (middleware, state management, CSS modules, CI/CD, etc.)
+2. **LLM Analysis:** Architecture overview, Mermaid diagram, key files map — uses the Model Router's `documentation` route
+
+**Progress Events:** The `onboarding:progress` event is emitted during analysis with `{ stage, message }` updates so the UI can show real-time status.
+
+**Files:** `electron/services/project-analyzer.ts`, `electron/services/project-onboarding.ts`
+
+### 19. Chat Enhancements
+
+A collection of UX improvements to the chat experience:
+
+**Follow-Up Suggestions:**
+- After each AI response, 3 clickable suggestion chips appear below the message
+- Generated via a background LLM call analyzing the conversation context
+- Click a chip to instantly send it as your next message
+
+**Selection Toolbar:**
+- Select text inside any assistant response
+- A floating toolbar appears with 4 actions: **Explain**, **Refactor**, **Remember**, **Copy**
+- Explain/Refactor send a follow-up message with the selected text; Remember stores it to long-term memory; Copy copies to clipboard
+
+**Smart Paste:**
+- Auto-detects pasted content type (stack traces, JSON, URLs, shell commands, code blocks)
+- Shows a brief hint label (e.g., "Stack trace detected") so you know it was recognized
+- Content is formatted appropriately for the AI
+
+**View Mode Toggle:**
+- Per-message toggle on assistant responses (appears for messages >50 characters)
+- Three modes: **Rendered** (default, formatted markdown), **Raw** (plain markdown source), **Preview** (clean reader mode)
+
+**Collapsible Responses:**
+- Responses exceeding 40 lines or 2,500 characters auto-collapse
+- Gradient fade overlay with a "Show full response (N lines)" button
+- Click to expand; click "Collapse" to fold again
+
+**Inline Prompt Enhancer:**
+- Sparkle (✨) button next to the send button in the chat input
+- Click to enhance your prompt using AI before sending — the enhanced version replaces your draft
+- Uses long-term memories for personalized enhancement
+
+**In-Chat Model Picker:**
+- Click the model badge in the chat input bottom row
+- Dropdown lists all models from all configured providers, grouped by provider name
+- Embedding models are automatically filtered out
+- Selected model applies to the current conversation
+
+**Conversation Starters:**
+- When a custom agent is active and the conversation is empty, starter prompt chips are displayed
+- Each agent can define up to 5 starters (configured in the Agent Builder)
+- Click a chip to send it as your first message
+
+### 20. Agent Builder Upgrade
+
+Major overhaul of the agent creation and editing experience.
+
+**AI Agent Generator:**
+- Describe your desired agent in natural language (e.g., "React performance optimizer that reviews code for re-renders")
+- AI generates a complete agent configuration: name, icon, description, tags, system prompt, enabled tools, constraints, pipeline stages, and conversation starters
+- The generated config pre-fills the editor for further tweaking
+- Component: `src/components/Agent/AgentGenerateBar.tsx`
+
+**Full-Screen Builder Modal:**
+- Replaces the old narrow side panel with a large modal overlay
+- Left sidebar: preset gallery with 8 pre-configured templates
+- Right area: tabbed editor with 5 tabs — **Identity** (name, icon, description, tags), **Prompt** (system prompt + live preview), **Tools** (grouped tool picker), **Knowledge** (file uploads), **Pipeline** (stage configuration)
+
+**Live Prompt Preview:**
+- Below the system prompt textarea, real-time stats are shown: token count, character count, line count
+- Helps gauge prompt size before saving
+
+**Grouped Tool Picker:**
+- Tools are organized into 6 categories: File System, Search, Git, Web, Dev, Utilities
+- Each group has Select All / Clear buttons
+- Dangerous tools (e.g., `execute_command`, `delete_file`) display a warning indicator
+
+**Conversation Starters:**
+- Agents can have up to 5 starter prompts
+- Editable in the Identity tab of the builder
+- Auto-generated when using the AI Agent Generator
+- Displayed as chips in empty conversations when the agent is active
+- New field on `AgentConfig`: `conversationStarters?: string[]`
+
+**Agent Analytics:**
+- Agent cards on the panel display usage statistics (run count, token usage)
+- Helps identify which agents are most used
+
+### 21. Sidebar Redesign
+
+The sidebar has been restructured from a fixed layout to a fully collapsible, scrollable design.
+
+**New Structure:**
+- Two collapsible sections: **Menu** and **Chats (N)**
+- Click a section header to collapse/expand it
+- Single scrollable body containing both sections — no fixed footer
+
+**Menu Section Items:**
+- Code Gen, Refactor, Docs, Prompt, Files, Terminal, Agents, Pipeline, Usage, Settings
+- All items are always visible when the section is expanded
+
+**Chats Section:**
+- Header shows conversation count: "Chats (N)"
+- Search input for filtering conversations by title
+- Conversation list with rename, delete, and selection controls
+
+**Behavior:**
+- No fixed footer — everything scrolls together naturally
+- Collapsed sidebar still shows window controls
+- Resizable via drag handle (200px–500px range)
+
+### 22. Usage Dashboard Modal
+
+The Usage Dashboard has been changed from a side panel to a centered modal overlay.
+
+**Layout:**
+- Centered modal with backdrop blur
+- Click outside or press Escape to close
+- 640px wide, scrollable content area
+- Same data and charts as before (summary cards, daily bar chart, per-model table, time filters)
+
 ## Custom Agents
 
 LocalMind AI allows you to create specialized AI agents with custom system prompts, tools, constraints, and pipeline configurations.
@@ -524,15 +713,22 @@ Start quickly with pre-configured agent templates:
 
 ### Creating a Custom Agent
 
+**Option A — AI Generator:**
+1. Open the Agent Panel from the sidebar
+2. Type a natural language description in the generate bar (e.g., "Kubernetes troubleshooter")
+3. Click "Generate Agent" — AI creates the full configuration
+4. Review and tweak in the editor modal, then save
+
+**Option B — Manual / Preset:**
 1. Open the Agent Panel from the sidebar
 2. Click "Create Agent"
-3. Choose a preset or start from scratch
-4. Configure:
-   - **System Prompt**: Define agent behavior and expertise
-   - **Default Model**: AI model used by default
-   - **Tools**: Enable/disable available tools
-   - **Constraints**: File patterns, languages, approval settings
-   - **Pipeline Stages**: Enable/disable pipeline stages
+3. Choose a preset from the gallery or start from scratch
+4. Configure across 5 editor tabs:
+   - **Identity**: Name, icon, description, tags, conversation starters
+   - **Prompt**: System prompt with live token/char/line count preview
+   - **Tools**: Grouped tool picker (6 categories) with Select All/Clear
+   - **Knowledge**: Upload context files for the agent
+   - **Pipeline**: Enable/disable pipeline stages, set retries and timeouts
 
 ### Agent Features
 
@@ -576,13 +772,17 @@ Start quickly with pre-configured agent templates:
 
 ### Pipeline Integration
 
-Custom agents integrate with the task pipeline:
+Custom agents integrate with the task pipeline. The pipeline template determines which stages run:
 
+- **Research**: Analyzes project structure and discovers relevant files (Deep Review, Docs Only, Refactor templates)
 - **Plan**: Analyzes requirements using agent's system prompt
 - **Action**: Generates code with agent's constraints
 - **Review**: Checks code quality
+- **Security**: Scans for vulnerabilities with a 0-100 security score (Deep Review template)
 - **Validate**: Tests correctness
 - **Execute**: Applies changes (with approval if required)
+
+Agents can also disable individual stages via their pipeline configuration, which takes precedence over the template.
 
 ## User Interface
 
@@ -599,14 +799,16 @@ Custom agents integrate with the task pipeline:
 - Visible in both expanded and collapsed sidebar
 
 ### Sidebar
-- **New Chat / Agentic Task** - Create new conversation
-- **Code Generator** - Open code generation panel
-- **Code Refactor** - Open refactoring panel
-- **Design Documents** - Open design doc generator
-- **Prompt Enhancer** - Open prompt enhancer
-- **Task Pipeline** - Open pipeline dashboard
-- **Usage & Costs** - Open usage dashboard with token/cost tracking
-- **Settings** - Open settings modal
+Two collapsible sections in a single scrollable body:
+
+**Menu Section:**
+- Code Gen, Refactor, Docs, Prompt, Files, Terminal, Agents, Pipeline, Usage, Settings
+- Click section header to collapse/expand
+
+**Chats (N) Section:**
+- Search input for filtering conversations
+- Conversation list with rename/delete
+- Header shows total count
 
 ### Chat Window
 - **Close button (X)** - Collapses chat window
@@ -623,6 +825,7 @@ Custom agents integrate with the task pipeline:
 - `Ctrl+,` - Open settings
 - `Ctrl+/` - Show shortcuts
 - `Ctrl+L` - Focus chat input
+- `/` - Open slash command autocomplete (when chat input is focused)
 
 ## Architecture
 
@@ -642,13 +845,20 @@ Custom agents integrate with the task pipeline:
   - Usage tracking
   - Long-term memory
   - User profile & personality
+  - Project onboarding & analysis
 
 ### Services
 - **ProviderRegistry** - Multi-provider lifecycle, connection testing, model listing, chat streaming
 - **OllamaService** - Ollama-specific API interactions (legacy, embeddings)
 - **VectorDBService** - Semantic search
-- **PipelineOrchestrator** - Agent pipeline execution
+- **PipelineOrchestrator** - Agent pipeline execution with graph-based stage traversal
+- **PipelineGraph** - Directed graph engine for conditional/dynamic pipeline execution
+- **PipelineTemplates** - Pre-configured pipeline profiles (Standard, Quick Fix, Deep Review, Docs Only, Refactor)
+- **ResearchAgent** - Static project analysis + LLM-powered codebase research
+- **SecurityAgent** - Vulnerability scanning (regex patterns, npm audit, LLM security review)
 - **ModelRouter** - Task-based model selection with provider awareness
 - **UsageTracker** - Token counting, cost calculation, usage persistence
 - **LongTermMemory** - Persistent memory, recall scoring, decay, profile management
 - **CommandRouter** - Natural language intent detection and slash command execution
+- **ProjectAnalyzer** - Static codebase analysis (framework, language, file stats, patterns)
+- **ProjectOnboarding** - Full onboarding report generation (static + LLM analysis)

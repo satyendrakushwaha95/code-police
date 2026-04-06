@@ -584,7 +584,39 @@ Build the full personality system prompt from current profile and personality mo
 string
 ```
 
+### Project Onboarding
+
+#### `project:onboard`
+
+Analyze a project directory and generate a full onboarding report. Phase 1 runs static analysis (instant, no LLM). Phase 2 sends results to the LLM for architecture overview, Mermaid diagram, and key files map.
+
+**Request:**
+```typescript
+{
+  rootPath: string;  // Absolute path to the project root
+}
+```
+
+**Response:**
+```typescript
+{
+  report: OnboardingReport;
+  formatted: string;  // Pre-formatted markdown report ready for display
+}
+```
+
+Progress updates are emitted via the `onboarding:progress` event during analysis (see Event Emitters).
+
 ### Pipeline
+
+#### `pipeline:getTemplates`
+
+Get available pipeline templates.
+
+**Response:**
+```typescript
+PipelineTemplateConfig[]
+```
 
 #### `pipeline:run`
 
@@ -595,12 +627,15 @@ Start a pipeline execution.
 {
   task: string;
   options: {
-    maxRetries: number;  // Note: Auto-retry limited to 2
+    maxRetries: number;
     timeoutMs: number;
     autoExecute: boolean;
+    smartSkip?: boolean;   // Auto-skip stages for doc-only tasks
   };
-  projectRoot?: string;  // Stored with pipeline for security checks
-  runId?: string;        // Optional: Frontend-generated run ID
+  projectRoot?: string;
+  runId?: string;
+  agentId?: string;
+  template?: PipelineTemplate;  // 'standard' | 'quick-fix' | 'deep-review' | 'docs-only' | 'refactor'
 }
 ```
 
@@ -666,7 +701,7 @@ Retry failed stage with suggestions.
 ```typescript
 {
   runId: string;
-  suggestions: string[];  // Includes user feedback
+  suggestions: string[];
 }
 ```
 
@@ -685,13 +720,106 @@ Get output from a specific stage.
 ```typescript
 {
   runId: string;
-  stage: 'plan' | 'action' | 'review' | 'validate' | 'execute';
+  stage: string;  // Any stage name: 'plan', 'action', 'review', 'validate', 'execute', 'research', 'security'
 }
 ```
 
 **Response:**
 ```typescript
 StageResult<any>
+```
+
+#### `pipeline:analytics:getSummary`
+
+Get pipeline analytics summary.
+
+**Request:**
+```typescript
+{
+  fromTimestamp?: number;
+  toTimestamp?: number;
+}
+```
+
+**Response:**
+```typescript
+{
+  totalRuns: number;
+  successRate: number;       // 0-100
+  avgDurationMs: number;
+  totalTokens: number;
+  totalCostUsd: number;
+  avgRetries: number;
+}
+```
+
+#### `pipeline:analytics:getByTemplate`
+
+Get analytics broken down by pipeline template.
+
+**Request:**
+```typescript
+{
+  fromTimestamp?: number;
+  toTimestamp?: number;
+}
+```
+
+**Response:**
+```typescript
+Array<{
+  template: string;
+  count: number;
+  passed: number;
+  avg_duration_ms: number;
+  avg_cost_usd: number;
+}>
+```
+
+#### `pipeline:analytics:getByStage`
+
+Get stage bottleneck analytics.
+
+**Request:**
+```typescript
+{
+  fromTimestamp?: number;
+  toTimestamp?: number;
+}
+```
+
+**Response:**
+```typescript
+Array<{
+  stage: string;
+  executions: number;
+  avg_duration_ms: number;
+  failures: number;
+  avg_cost_usd: number;
+}>
+```
+
+#### `pipeline:analytics:getByModel`
+
+Get model performance analytics.
+
+**Request:**
+```typescript
+{
+  fromTimestamp?: number;
+  toTimestamp?: number;
+}
+```
+
+**Response:**
+```typescript
+Array<{
+  model: string;
+  executions: number;
+  successes: number;
+  avg_duration_ms: number;
+  avg_cost_usd: number;
+}>
 ```
 
 ### Window Control
@@ -1021,6 +1149,17 @@ Emitted when the global hotkey (`Ctrl+Space`) is pressed. Brings the app to the 
 void
 ```
 
+### onboarding:progress
+
+Emitted during `project:onboard` execution to report analysis progress. Sent to all renderer windows.
+
+```typescript
+{
+  stage: string;    // 'analyzing' | 'generating' | 'complete'
+  message: string;  // Human-readable progress message
+}
+```
+
 ## Types
 
 ### Message
@@ -1037,6 +1176,7 @@ interface Message {
   pipelineStatus?: 'starting' | 'running' | 'complete' | 'failed' | 'cancelled';
   pipelineRunId?: string;
   usage?: MessageUsage;
+  suggestions?: string[];  // Follow-up suggestion chips (generated after each AI response)
 }
 ```
 
@@ -1057,7 +1197,25 @@ interface MessageUsage {
 ### PipelineStage
 
 ```typescript
-type PipelineStage = 'plan' | 'action' | 'review' | 'validate' | 'execute';
+type PipelineStage = 'plan' | 'action' | 'review' | 'validate' | 'execute' | 'research' | 'security';
+```
+
+### PipelineTemplate
+
+```typescript
+type PipelineTemplate = 'quick-fix' | 'standard' | 'deep-review' | 'docs-only' | 'refactor';
+```
+
+### PipelineTemplateConfig
+
+```typescript
+interface PipelineTemplateConfig {
+  id: PipelineTemplate;
+  name: string;
+  description: string;
+  stages: PipelineStage[];
+  icon: string;
+}
 ```
 
 ### StageStatus
@@ -1072,15 +1230,11 @@ type StageStatus = 'pending' | 'running' | 'complete' | 'failed' | 'skipped';
 interface PipelineRun {
   id: string;
   task_description: string;
-  project_root?: string;      // Stored for security checks
+  project_root?: string;
   status: 'running' | 'complete' | 'failed' | 'cancelled';
-  stages: {
-    plan: StageResult<TaskPlan>;
-    action: StageResult<CodeOutput>;  // Renamed from "code"
-    review: StageResult<ReviewResult>;
-    validate: StageResult<ValidationResult>;
-    execute: StageResult<ExecuteResult>;
-  };
+  template?: PipelineTemplate;
+  stage_order: PipelineStage[];
+  stages: Record<string, StageResult<any>>;  // Only stages in stage_order are present
   final_verdict?: 'PASS' | 'FAIL';
   created_at: number;
   completed_at?: number;
@@ -1159,6 +1313,45 @@ interface ExecuteResult {
 }
 ```
 
+### ResearchResult
+
+```typescript
+interface ResearchResult {
+  files_examined: string[];
+  key_findings: string[];
+  relevant_patterns: string[];
+  existing_implementation: Array<{
+    file: string;
+    code: string;
+    relevance: string;
+  }>;
+  summary: string;
+}
+```
+
+### SecurityResult
+
+```typescript
+interface SecurityResult {
+  verdict: 'PASS' | 'FAIL';
+  vulnerabilities: Array<{
+    severity: 'critical' | 'high' | 'medium' | 'low';
+    type: string;
+    description: string;
+    file: string;
+    line?: number;
+    recommendation: string;
+  }>;
+  dependency_issues: Array<{
+    package: string;
+    issue: string;
+    severity: string;
+  }>;
+  summary: string;
+  score: number;  // 0-100 security score
+}
+```
+
 ### TaskPlan
 
 ```typescript
@@ -1215,6 +1408,7 @@ interface AgentConfig {
   constraints: AgentConstraints;
   knowledgeBase: KnowledgeBaseConfig;
   pipelineStages: AgentPipelineConfig;
+  conversationStarters?: string[];  // Up to 5 starter prompts shown in empty conversations
 }
 ```
 
@@ -1365,13 +1559,15 @@ Pre-configured agent templates for common use cases:
 
 ### Agent Pipeline Stages
 
-Each agent can configure which pipeline stages to use:
+Each agent can configure which pipeline stages to use. The pipeline template determines the default stages, but agents can override with their `pipelineStages` config:
 
 | Stage | Description |
 |-------|-------------|
+| Research | Analyze project structure and discover relevant code |
 | Plan | Analyze requirements and create task plan |
 | Action | Generate code based on the plan |
 | Review | Review generated code for issues |
+| Security | Scan for vulnerabilities and produce security score |
 | Validate | Validate against acceptance criteria |
 | Execute | Apply file changes to project |
 
@@ -1567,9 +1763,107 @@ interface CommandResult {
 type CommandIntent =
   | 'terminal' | 'git_status' | 'git_log' | 'git_commit' | 'git_diff'
   | 'search_code' | 'read_file' | 'list_dir'
-  | 'remember' | 'recall'
+  | 'remember' | 'recall' | 'onboard'
   | 'open_codegen' | 'open_refactor' | 'open_designdoc' | 'open_pipeline'
   | 'open_settings' | 'open_files' | 'open_terminal' | 'open_agents'
   | 'open_usage' | 'open_compare'
   | 'new_chat' | 'none';
+```
+
+---
+
+## Project Onboarding Types
+
+### TechStackInfo
+
+```typescript
+interface TechStackInfo {
+  framework: string | null;
+  language: string;
+  styling: string[];
+  database: string[];
+  testing: string[];
+  buildTool: string | null;
+  packageManager: string;
+  runtime: string;
+  other: string[];
+}
+```
+
+### FileStats
+
+```typescript
+interface FileStats {
+  totalFiles: number;
+  totalDirs: number;
+  byExtension: Record<string, number>;
+  largestFiles: Array<{ path: string; lines: number }>;
+  totalLines: number;
+  sourceFiles: number;
+  testFiles: number;
+}
+```
+
+### ProjectAnalysis
+
+```typescript
+interface ProjectAnalysis {
+  techStack: TechStackInfo;
+  fileStats: FileStats;
+  configFiles: string[];
+  entryPoints: string[];
+  apiRoutes: string[];
+  keyFileSamples: Array<{ path: string; content: string; role: string }>;
+  directoryTree: string;
+  packageInfo: {
+    name?: string;
+    version?: string;
+    description?: string;
+    dependencies: number;
+    devDependencies: number;
+  } | null;
+  detectedPatterns: string[];
+}
+```
+
+### OnboardingReport
+
+```typescript
+interface OnboardingReport {
+  projectName: string;
+  techStackSummary: string;
+  architectureOverview: string;
+  mermaidDiagram: string;
+  keyFilesMap: string;
+  apiSurface: string;
+  dataSchemaDiagram: string;
+  healthAssessment: string;
+  directoryTree: string;
+  rawAnalysis: ProjectAnalysis;
+}
+```
+
+---
+
+## Agent Generator Types
+
+### GeneratedAgentConfig
+
+Returned by the AI agent generator when a user describes an agent in natural language.
+
+```typescript
+interface GeneratedAgentConfig {
+  name: string;
+  description: string;
+  icon: string;                    // Single emoji
+  tags: string[];
+  systemPrompt: string;
+  enabledTools: string[];          // Tool IDs (validated against available tools)
+  allowedLanguages: string[];
+  allowedFilePatterns: string[];
+  blockedFilePatterns: string[];
+  requireApproval: boolean;
+  pipelineStages: Record<string, boolean>;
+  conversationStarters: string[];  // 3-5 short actionable prompts
+}
 ```

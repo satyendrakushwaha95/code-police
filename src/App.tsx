@@ -177,13 +177,15 @@ function AppContent() {
         {showTerminal && (
           <TerminalPanel onClose={() => setShowTerminal(false)} />
         )}
-        {showAgentPanel && (
-          <AgentPanel onClose={() => setShowAgentPanel(false)} />
-        )}
-        {showUsage && (
-          <UsageDashboard onClose={() => setShowUsage(false)} />
-        )}
       </div>
+
+      {showAgentPanel && (
+        <AgentPanel onClose={() => setShowAgentPanel(false)} />
+      )}
+
+      {showUsage && (
+        <UsageDashboard onClose={() => setShowUsage(false)} />
+      )}
 
       {showCompare && (
         <ComparePanel
@@ -222,6 +224,10 @@ function AppContent() {
               case 'files': setFilePanelOpen(true); break;
               case 'terminal': setShowTerminal(true); break;
               case 'agents': setShowAgentPanel(true); break;
+              case 'onboard': {
+                document.dispatchEvent(new CustomEvent('localmind:onboard'));
+                break;
+              }
               case 'usage': setShowUsage(true); break;
               case 'settings': setShowSettings(true); break;
               case 'shortcuts': setShowShortcuts(true); break;

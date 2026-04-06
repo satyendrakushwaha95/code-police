@@ -34,6 +34,10 @@ LocalMind AI is built with Electron + React, combining a desktop UI with a Node.
 │  │  Long-Term   │  │ File System │  │Ollama Embed │           │
 │  │  Memory       │  │ Operations  │  │  Service    │           │
 │  └───────────────┘  └─────────────┘  └─────────────┘           │
+│  ┌───────────────┐  ┌─────────────┐                            │
+│  │  Project      │  │ Command     │                            │
+│  │  Onboarding   │  │ Router (FE) │                            │
+│  └───────────────┘  └─────────────┘                            │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -49,14 +53,18 @@ localmind-ai/
 │   │   ├── embeddings.ts        # Ollama embeddings service
 │   │   ├── shared-ollama.ts     # Shared Ollama embeddings singleton
 │   │   ├── vector-db.ts         # LanceDB vector store
-│   │   ├── pipeline-orchestrator.ts  # Agent pipeline
-│   │   ├── pipeline-state.ts         # Pipeline state (SQLite)
+│   │   ├── pipeline-orchestrator.ts  # Agent pipeline (graph-based execution)
+│   │   ├── pipeline-state.ts         # Pipeline state + analytics (SQLite)
 │   │   ├── pipeline-types.ts         # Pipeline TypeScript interfaces
+│   │   ├── pipeline-templates.ts     # Pipeline template configs (5 templates)
+│   │   ├── pipeline-graph.ts         # Directed graph engine for conditional pipelines
 │   │   ├── model-router.ts      # Task-based model routing
 │   │   ├── routing-config.ts    # Model routing configuration
 │   │   ├── memory.ts            # Agent memory (short-term)
 │   │   ├── long-term-memory.ts  # Persistent memory, profile, personality
 │   │   ├── usage-tracker.ts     # Token counting & cost tracking
+│   │   ├── project-analyzer.ts  # Static codebase analysis (no LLM)
+│   │   ├── project-onboarding.ts # Full onboarding report (static + LLM)
 │   │   ├── agent-manager.ts     # Custom agent management
 │   │   ├── agent-store.ts       # Agent persistence
 │   │   ├── agent-types.ts       # Agent interfaces and presets
@@ -73,7 +81,9 @@ localmind-ai/
 │   │       ├── coder-agent.ts
 │   │       ├── reviewer-agent.ts
 │   │       ├── validator-agent.ts
-│   │       └── executor-agent.ts
+│   │       ├── executor-agent.ts
+│   │       ├── research-agent.ts     # Codebase research (static + LLM)
+│   │       └── security-agent.ts     # Security audit (regex + npm audit + LLM)
 │   └── utils/
 │       ├── file-operations.ts
 │       └── path-utils.ts
@@ -127,12 +137,14 @@ localmind-ai/
 │   │   │   ├── ProfileSettingsPanel.tsx   # Profile, personality, memories UI
 │   │   │   └── Settings.css
 │   │   ├── Sidebar/
-│   │   │   └── Sidebar.tsx
+│   │   │   ├── Sidebar.tsx
+│   │   │   └── Sidebar.css
 │   │   ├── Agent/
 │   │   │   ├── AgentPanel.tsx
-│   │   │   ├── AgentEditorModal.tsx
+│   │   │   ├── AgentEditorModal.tsx     # Full-screen builder modal
 │   │   │   ├── AgentCard.tsx
-│   │   │   ├── ToolPicker.tsx          # 21 available tools
+│   │   │   ├── AgentGenerateBar.tsx     # AI agent generator bar
+│   │   │   ├── ToolPicker.tsx           # 21+ tools, grouped by category
 │   │   │   └── KnowledgeUploader.tsx
 │   │   └── common/
 │   │       └── CodeBlock.tsx
@@ -174,38 +186,56 @@ localmind-ai/
 
 ### 1. Pipeline Orchestrator
 
-Manages the autonomous agent pipeline execution.
+Manages the autonomous agent pipeline execution with graph-based stage traversal.
 
-**Pipeline Stages:**
-1. **Plan** - Analyzes task, creates execution plan
-2. **Action** - Generates/modifies code based on plan (renamed from "Code")
-3. **Review** - Reviews code quality, finds issues
-4. **Validate** - Runs tests and validation
-5. **Execute** - Applies changes to filesystem
+**Pipeline Templates:**
+
+| Template | Stages | Use Case |
+|----------|--------|----------|
+| Standard | Plan → Action → Review → Validate → Execute | Default |
+| Quick Fix | Plan → Action → Execute | Fast bug fixes |
+| Deep Review | Research → Plan → Action → Review → Security → Validate → Execute | Thorough review |
+| Docs Only | Research → Plan → Action → Review | Documentation tasks |
+| Refactor | Research → Action → Review → Validate → Execute | Code restructuring |
+
+**Pipeline Stages (7 total):**
+1. **Research** - Static project analysis + LLM codebase research
+2. **Plan** - Analyzes task, creates execution plan
+3. **Action** - Generates/modifies code based on plan
+4. **Review** - Reviews code quality, finds issues
+5. **Security** - Vulnerability scanning (regex patterns, npm audit, LLM review), produces 0-100 score
+6. **Validate** - Runs tests and validation
+7. **Execute** - Applies changes to filesystem
+
+**Graph-Based Execution:**
+- Each template is compiled into a `PipelineGraph` with `StageNode` entries
+- The orchestrator walks the graph via a `while (currentStage)` loop
+- Each `StageNode` defines: `onFail` behavior (stop/retry/skip/replan), `maxRetries`, `condition`, `resolveNext`
+- Per-stage retry counters (`retryCountByStage`) ensure stage budgets are independent
+- `MAX_REPLANS = 2` circuit breaker prevents infinite replan loops
+- Agent-level stage toggles (`isStageEnabled()`) can skip stages regardless of template
 
 **Task Type Detection:**
 - Planner intelligently detects task type
 - Documentation-only tasks (PRD, README) only generate docs, not code
-- Code tasks generate implementation files
-- Avoids generating implementation for documentation requests
+- Optional `smartSkip` — auto-skips validate/execute for detected doc-only tasks
 
 **Retry Logic:**
-- Max 2 auto-attempts before manual review required
-- When review fails, issues are passed back to Action stage
-- After 2 failures, pipeline status changes to 'failed'
+- Max 2 auto-attempts per stage before the graph transitions based on `onFail` policy
+- When review returns FAIL verdict, the graph routes back to action (counter incremented per loop)
 - User can manually retry with additional suggestions
 - Stop pipeline with custom instructions supported
 
-**Stop Pipeline Feature:**
-- User can stop running pipelines at any time
-- After stopping, user enters instructions
-- AI analyzes intent (continue/restart/cancel)
-- Executes appropriate action
-
 **State Management:**
-- PipelineStateStore: Persists pipeline state to SQLite
-- Active run tracking with project_root stored
-- History with retry capability
+- PipelineStateStore: Persists pipeline state + analytics to SQLite
+- Template and stage_order stored per run
+- Active run tracking with project_root
+- Analytics recorded after every pipeline completion (pass, fail, cancel, timeout)
+
+**Pipeline Analytics:**
+- Per-run recording: duration, stage counts, bottleneck stage, token/cost from usage tracker
+- Aggregate queries: summary (success rate, avg duration), by-template, by-stage (bottlenecks), by-model
+- Time-range filtering support
 
 ### 2. Vector DB Service
 
@@ -324,6 +354,32 @@ Jarvis-style natural language command router that intercepts user input before i
 
 **Slash Command Autocomplete:** `getSlashCommandHints()` returns hints for dropdown
 
+### 9. Project Onboarding
+
+Two-phase project analysis engine.
+
+**Phase 1 — Static Analysis (`project-analyzer.ts`):**
+- Recursive file scan with depth limit (6 levels) and ignored directories (node_modules, .git, dist, etc.)
+- Framework detection: 30+ frameworks (Next.js, Nuxt, Angular, SvelteKit, Astro, Vue, React + Vite, Express, Fastify, Django, Flask, Go, Rust, Spring, Rails, Laravel, Flutter, etc.)
+- Language detection by file extension counts
+- Styling detection: Tailwind, MUI, Chakra, Styled Components, Emotion, Bootstrap, SCSS, Less
+- Database detection: Prisma, Drizzle, TypeORM, Sequelize, MongoDB, PostgreSQL, MySQL, SQLite, Redis, Supabase, Firebase
+- Testing detection: Jest, Vitest, Mocha, Cypress, Playwright, React Testing Library, Supertest
+- Entry point detection, API route detection (REST controllers, Next.js API routes, etc.)
+- Config file discovery, package.json parsing, directory tree generation
+- Pattern detection: middleware, hooks, state management, service layer, CSS modules, CI/CD, etc.
+- Key file sampling: reads first ~2KB of entry points, API routes, configs, and schema files for LLM context
+
+**Phase 2 — LLM Analysis (`project-onboarding.ts`):**
+- Sends static analysis + file samples to LLM (uses Model Router `documentation` route)
+- LLM generates: architecture overview (3–5 sentences), Mermaid diagram (`graph TD`), key files map
+- Response is parsed via delimited sections (`---ARCHITECTURE_OVERVIEW---`, `---MERMAID_DIAGRAM---`, `---KEY_FILES_MAP---`)
+- Graceful fallback if LLM is unavailable — static analysis still produces a useful report
+
+**Output:** `OnboardingReport` containing tech stack summary, architecture overview, Mermaid diagram, key files map, API surface, health assessment, directory tree, and raw `ProjectAnalysis` data.
+
+**Progress Events:** `onboarding:progress` is emitted to all renderer windows during analysis with `{ stage: string, message: string }`.
+
 ## IPC Channels
 
 ### Chat
@@ -380,14 +436,27 @@ Jarvis-style natural language command router that intercepts user input before i
 - `profile:getPersonalityModes` - Get available personality modes with descriptions
 - `profile:getPersonalityPrompt` - Build the full personality system prompt
 
+### Project Onboarding
+- `project:onboard` - Analyze a project directory and generate onboarding report (request: `{ rootPath: string }`, response: `{ report: OnboardingReport, formatted: string }`)
+
+### Events
+- `jarvis:summon` - Emitted when `Ctrl+Space` global hotkey is pressed; brings app to front and focuses chat input
+- `onboarding:progress` - Emitted during project onboarding with `{ stage: string, message: string }`
+
 ### Pipeline
-- `pipeline:run` - Start pipeline execution (includes projectRoot and runId)
+- `pipeline:getTemplates` - Get available pipeline templates
+- `pipeline:run` - Start pipeline execution (includes projectRoot, runId, and template)
 - `pipeline:cancel` - Cancel running pipeline
 - `pipeline:getRun` - Get specific pipeline run
 - `pipeline:getHistory` - Get pipeline history
 - `pipeline:deleteRun` - Delete pipeline run
+- `pipeline:getStageOutput` - Get output from a specific stage (accepts any stage name)
 - `pipeline:retryFix` - Retry failed stage with suggestions
 - `pipeline:analyzeAndRetry` - Analyze user instructions and retry/stop pipeline
+- `pipeline:analytics:getSummary` - Get analytics summary (success rate, avg duration, etc.)
+- `pipeline:analytics:getByTemplate` - Get analytics broken down by template
+- `pipeline:analytics:getByStage` - Get stage bottleneck analytics
+- `pipeline:analytics:getByModel` - Get model performance analytics
 
 ### Agent Management
 - `agent:list` - Get all custom agents
@@ -430,7 +499,10 @@ Jarvis-style natural language command router that intercepts user input before i
 
 | Table | Service | Description |
 |-------|---------|-------------|
-| `pipeline_runs` | Pipeline State | Pipeline execution history and stage results |
+| `pipeline_runs` | Pipeline State | Pipeline execution history (includes template, stage_order) |
+| `pipeline_stage_results` | Pipeline State | Per-stage execution results (status, model, duration, output) |
+| `pipeline_analytics` | Pipeline Analytics | Per-run aggregate metrics (duration, stages, bottleneck, tokens, cost) |
+| `pipeline_stage_analytics` | Pipeline Analytics | Per-stage analytics (duration, model, status per attempt) |
 | `token_usage` | Usage Tracker | Per-message token counts, costs, durations |
 | `custom_pricing` | Usage Tracker | User-defined per-model pricing overrides |
 | `long_term_memory` | Long-Term Memory | Persistent memory facts with embeddings and importance |
@@ -465,8 +537,11 @@ Jarvis-style natural language command router that intercepts user input before i
 - Home button to return to dashboard
 
 **ChatInput** - Two-row input layout:
-- Top row: Textarea (auto-expand) + Send button
-- Bottom row: Attachment | Model badge | Chat | Send to Agent
+- Top row: Textarea (auto-expand) + Send button + Prompt Enhance (✨) button
+- Bottom row: Attachment | Model badge (clickable model picker) | Compare | Chat | Send to Agent
+- In-chat model picker: dropdown of all provider models grouped by provider, embedding models filtered
+- Slash command autocomplete dropdown when `/` is typed
+- Smart paste detection (stack traces, JSON, URLs, commands, code)
 
 **DiffViewer** - Three-tab diff viewer:
 - Changes: Unified diff with line highlighting
@@ -475,17 +550,33 @@ Jarvis-style natural language command router that intercepts user input before i
 
 ### Pipeline Components
 
-**PipelinePanel** - Single-view pipeline dashboard
+**PipelinePanel** - Pipeline dashboard with Runs and Analytics tabs
+- Two tabs: Runs (pipeline list) and Analytics (performance dashboard)
+- Dynamic stage rendering from `run.stage_order`
+- Template badge display
 - Auto-refresh every 5 seconds
-- Manual refresh button
-- Expandable pipeline items
 
-**StageCard** - Pipeline stage display
-- Status indicator with animations
+**StageCard** - Pipeline stage display (supports 7 stage types)
+- Status indicator with animations (pending, running, complete, failed, skipped)
+- Research results rendering (findings, patterns, files examined)
+- Security results rendering (score badge, vulnerability table, dependency issues)
+- Code changes viewer, validation results, review issues
 - Expandable output
-- Code changes viewer
+
+**AnalyticsDashboard** - Pipeline performance insights
+- Summary cards (success rate, avg duration, total runs, avg retries)
+- Template performance table
+- Stage bottleneck bars
+- Model performance table
+- Time-range filters (7 days, 30 days, all time)
 
 ### Sidebar
+
+**Redesigned Layout:**
+- Two collapsible sections: "Menu" and "Chats (N)"
+- Single scrollable body — no fixed footer
+- Click section header to collapse/expand
+- Resizable via drag handle (200px–500px)
 
 **Window Controls** - Mac-style buttons (red/yellow/green)
 - Always visible in both expanded and collapsed sidebar

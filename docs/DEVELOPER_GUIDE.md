@@ -51,7 +51,7 @@ npm run dist:win
 - `Terminal/` - Terminal emulator
 - `Settings/` - Settings modal, routing, provider management (ProviderSettingsPanel), profile & memory (ProfileSettingsPanel)
 - `Sidebar/` - Navigation sidebar with window controls
-- `Agent/` - Custom agent management (AgentPanel, AgentCard, AgentEditorModal, ToolPicker, KnowledgeUploader)
+- `Agent/` - Custom agent management (AgentPanel, AgentCard, AgentEditorModal, AgentGenerateBar, ToolPicker, KnowledgeUploader)
 - `common/` - Shared components
 
 **Hooks** (`src/hooks/`)
@@ -86,14 +86,18 @@ npm run dist:win
 - `embeddings.ts` - Ollama embeddings service
 - `shared-ollama.ts` - Shared Ollama embeddings singleton
 - `vector-db.ts` - LanceDB operations
-- `pipeline-orchestrator.ts` - Pipeline execution
-- `pipeline-state.ts` - SQLite pipeline state
+- `pipeline-orchestrator.ts` - Pipeline execution (graph-based stage traversal)
+- `pipeline-state.ts` - SQLite pipeline state + analytics
 - `pipeline-types.ts` - Pipeline TypeScript interfaces
+- `pipeline-templates.ts` - Pipeline template configs (5 templates)
+- `pipeline-graph.ts` - Directed graph engine for conditional/dynamic pipelines
 - `model-router.ts` - Task routing (provider-aware)
 - `routing-config.ts` - Routing configuration store (v2, with `providerId`)
 - `memory.ts` - Agent memory (short-term)
 - `long-term-memory.ts` - Persistent memory, user profile, personality engine
 - `usage-tracker.ts` - Token counting, cost calculation, usage persistence
+- `project-analyzer.ts` - Static codebase analysis (framework, language, file stats, patterns)
+- `project-onboarding.ts` - Full onboarding report generation (static + LLM analysis)
 - `agent-manager.ts` - Custom agent management
 - `agent-store.ts` - Agent persistence
 - `agent-types.ts` - Agent TypeScript interfaces and presets
@@ -113,6 +117,8 @@ npm run dist:win
 - `reviewer-agent.ts` - Code review
 - `validator-agent.ts` - Validation with doc task support
 - `executor-agent.ts` - File execution
+- `research-agent.ts` - Codebase research (static analysis + LLM)
+- `security-agent.ts` - Security audit (regex patterns + npm audit + LLM review)
 
 ## Creating Components
 
@@ -253,29 +259,64 @@ case 'YOUR_ACTION':
 
 ## Pipeline Integration
 
-### Pipeline Stages
+### Pipeline Architecture
 
-Current stages:
-1. `plan` - Task analysis and planning
-2. `action` - Code generation/modification (renamed from "code")
-3. `review` - Code review
-4. `validate` - Validation/testing
-5. `execute` - File system execution
+The pipeline system has 4 layers:
 
-### Adding Pipeline Stage
+1. **Templates** (`pipeline-templates.ts`) — 5 pre-configured stage sequences
+2. **Graph Engine** (`pipeline-graph.ts`) — Compiles templates into directed graphs with per-node retry/skip/stop policies
+3. **Orchestrator** (`pipeline-orchestrator.ts`) — Graph walker that dispatches to individual stage runners
+4. **Agents** (`agents/*.ts`) — 7 stage implementations (planner, coder, reviewer, validator, executor, research, security)
 
-1. Update `PipelineStage` type in `pipeline-types.ts`
-2. Add agent implementation in `agents/`
-3. Update orchestrator to include new stage
-4. Add UI display in `StageCard.tsx`
-5. Update `StageCard` STAGE_LABELS object
+### Pipeline Stages (7 total)
 
-### Pipeline State
+| Stage | Agent File | Purpose |
+|-------|-----------|---------|
+| `research` | `research-agent.ts` | Static analysis via `analyzeProject()` + LLM research |
+| `plan` | `planner-agent.ts` | Task analysis and planning |
+| `action` | `coder-agent.ts` | Code generation/modification |
+| `review` | `reviewer-agent.ts` | Code review |
+| `security` | `security-agent.ts` | Vulnerability scanning + npm audit + LLM review |
+| `validate` | `validator-agent.ts` | Validation/testing |
+| `execute` | `executor-agent.ts` | File system execution |
+
+### Pipeline Templates
+
+| Template | Stages |
+|----------|--------|
+| `standard` | plan → action → review → validate → execute |
+| `quick-fix` | plan → action → execute |
+| `deep-review` | research → plan → action → review → security → validate → execute |
+| `docs-only` | research → plan → action → review |
+| `refactor` | research → action → review → validate → execute |
+
+### Adding a New Pipeline Stage
+
+1. Add the stage name to `PipelineStage` union in `pipeline-types.ts`
+2. Create agent implementation in `agents/` (follow the `getSharedOllama()` pattern — NOT `ipcRenderer`)
+3. Add `run<Stage>Stage()` method to the orchestrator
+4. Add `case` in `executeSingleStage()` switch
+5. Add `case` in `updateContext()` switch
+6. Add the stage to relevant template(s) in `pipeline-templates.ts`
+7. Add `StageNode` entries in the relevant graph(s) in `pipeline-graph.ts`
+8. Add `STAGE_LABELS` entry and render method in `StageCard.tsx`
+
+### Adding a New Pipeline Template
+
+1. Add the template ID to `PipelineTemplate` union in `pipeline-types.ts`
+2. Add the template config to `PIPELINE_TEMPLATES` array in `pipeline-templates.ts`
+3. Add a `case` in `buildPipelineGraph()` in `pipeline-graph.ts`
+4. Add an `<option>` to the template selector in `ChatInput.tsx`
+
+### Pipeline State & Analytics
 
 Pipeline data is stored in SQLite via `pipeline-state.ts`:
-- Pipeline runs with task description and project root
-- Stage results with status, model used, duration, output
-- Retry logic limited to 2 auto-attempts
+- `pipeline_runs` — Run metadata with template, stage_order (JSON), status
+- `pipeline_stage_results` — Per-stage results with status, model, duration, output
+- `pipeline_analytics` — Per-run aggregate metrics (duration, tokens, cost, bottleneck)
+- `pipeline_stage_analytics` — Per-stage analytics for bottleneck analysis
+
+Analytics are recorded after every pipeline completion via `recordAnalytics()`, which pulls token/cost data from the `token_usage` table.
 
 ### Listening to Pipeline Events
 
@@ -454,6 +495,126 @@ After each chat exchange:
 | `project` | Framework, structure, APIs specific to a project |
 | `correction` | Mistakes to avoid in future |
 | `general` | Everything else |
+
+## Project Onboarding
+
+### Architecture
+
+The onboarding system has two layers:
+
+1. **`project-analyzer.ts`** — Pure static analysis, no LLM, instant results
+2. **`project-onboarding.ts`** — Orchestrates static analysis + LLM analysis, emits progress events
+
+### How Onboarding Works
+
+1. User triggers via `/onboard`, natural language ("analyze this codebase"), or dashboard tile
+2. `ChatView` calls `ipcRenderer.invoke('project:onboard', { rootPath })` with the workspace root
+3. `project-analyzer.ts` runs `analyzeProject(rootPath)`:
+   - Recursively scans files (max depth 6, ignores node_modules, .git, dist, etc.)
+   - Detects framework from `package.json` dependencies (30+ frameworks recognized)
+   - Detects primary language from file extension counts
+   - Discovers config files, entry points, API routes, test files
+   - Reads first ~2KB of key files (entry points, API routes, configs, schemas) for LLM context
+   - Returns `ProjectAnalysis` object
+4. `project-onboarding.ts` runs `runOnboarding(rootPath)`:
+   - Emits `onboarding:progress` events (stage + message) to all renderer windows
+   - Builds an LLM prompt with project facts, file samples, and directory tree
+   - Streams LLM response via Model Router (`documentation` route) + Provider Registry
+   - Parses delimited sections from LLM response (`---ARCHITECTURE_OVERVIEW---`, `---MERMAID_DIAGRAM---`, `---KEY_FILES_MAP---`)
+   - Returns `OnboardingReport`
+5. `formatOnboardingReport()` converts the report to markdown for display
+
+### Adding Framework Detection
+
+To detect a new framework, update `detectFramework()` in `project-analyzer.ts`:
+
+```typescript
+if (deps['my-framework']) return `MyFramework ${deps['my-framework'].replace('^', '')}`;
+```
+
+### Adding Pattern Detection
+
+To detect a new codebase pattern, add to the `detectedPatterns` array in `analyzeProject()`:
+
+```typescript
+if (allFiles.some(f => f.includes('my-pattern'))) detectedPatterns.push('My pattern detected');
+```
+
+### Listening to Onboarding Progress
+
+```typescript
+useEffect(() => {
+  const ipcRenderer = (window as any).ipcRenderer;
+
+  const handleProgress = (_event: any, data: { stage: string; message: string }) => {
+    console.log(`[Onboarding] ${data.stage}: ${data.message}`);
+  };
+
+  ipcRenderer.on('onboarding:progress', handleProgress);
+  return () => ipcRenderer.off('onboarding:progress', handleProgress);
+}, []);
+```
+
+## Agent Builder Customization
+
+### AI Agent Generator
+
+The `AgentGenerateBar` component (`src/components/Agent/AgentGenerateBar.tsx`) lets users describe an agent in natural language. The component:
+
+1. Sends the description to the LLM with a structured prompt that lists all available tools
+2. Expects a JSON response matching the `GeneratedAgentConfig` interface
+3. Validates tool IDs against the known `AVAILABLE_TOOL_IDS` list
+4. Passes the generated config to the editor modal via `onGenerated` callback
+
+To extend the generator prompt (e.g., add new tools), update both `AVAILABLE_TOOL_IDS` and the tool descriptions in `GENERATE_PROMPT` within `AgentGenerateBar.tsx`.
+
+### Agent Editor Modal Tabs
+
+The `AgentEditorModal` (`src/components/Agent/AgentEditorModal.tsx`) is a full-screen modal with 5 tabs:
+
+| Tab | Contents |
+|-----|----------|
+| Identity | Name, icon picker, description, tags, conversation starters (up to 5) |
+| Prompt | System prompt textarea with live stats (token count, char count, line count) |
+| Tools | Grouped tool picker (6 categories) with per-group Select All / Clear |
+| Knowledge | File upload for agent context, embedded for semantic search |
+| Pipeline | Enable/disable stages, retries, timeout configuration |
+
+### Adding Conversation Starters to an Agent
+
+Starters are stored on `AgentConfig.conversationStarters` (optional `string[]`). They appear as chips in `ChatView` when:
+- The active agent has starters defined
+- The current conversation has no messages yet
+
+To add starters programmatically:
+
+```typescript
+await ipcRenderer.invoke('agent:update', {
+  id: agentId,
+  updates: {
+    conversationStarters: [
+      'Review this component for performance issues',
+      'Generate unit tests for the auth module',
+      'Explain this error message',
+    ],
+  },
+});
+```
+
+### Grouped Tool Picker
+
+The `ToolPicker` component (`src/components/Agent/ToolPicker.tsx`) organizes 21+ tools into 6 categories:
+
+| Category | Tools |
+|----------|-------|
+| File System | read_file, write_file, append_file, delete_file, list_directory, create_directory, file_exists, get_file_info |
+| Search | grep_search, find_files, get_file_diff |
+| Git | git_status, git_log, git_commit |
+| Web | http_request, fetch_url |
+| Dev | execute_command, run_tests, lint_code, format_code |
+| Utilities | get_timestamp, calculate, read_env |
+
+Dangerous tools (`execute_command`, `delete_file`) display a warning indicator. Each group has Select All / Clear buttons.
 
 ## Usage Tracking
 

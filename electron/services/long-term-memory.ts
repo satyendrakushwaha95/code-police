@@ -68,6 +68,20 @@ export class LongTermMemory {
   }
 
   private init() {
+    // Check if table exists and migrate if needed BEFORE creating with new schema
+    const tableExists = this.db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='long_term_memory'"
+    ).get();
+
+    if (tableExists) {
+      // Migration: add importance column if missing
+      const columns = this.db.pragma('table_info(long_term_memory)') as Array<{ name: string }>;
+      if (!columns.some(c => c.name === 'importance')) {
+        this.db.exec("ALTER TABLE long_term_memory ADD COLUMN importance REAL DEFAULT 1.0");
+        this.db.exec("UPDATE long_term_memory SET importance = 1.0 WHERE importance IS NULL");
+      }
+    }
+
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS long_term_memory (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -75,7 +89,7 @@ export class LongTermMemory {
         content TEXT NOT NULL,
         source TEXT NOT NULL DEFAULT 'user',
         confidence REAL NOT NULL DEFAULT 1.0,
-        importance REAL NOT NULL DEFAULT 1.0,
+        importance REAL DEFAULT 1.0,
         embedding TEXT,
         createdAt INTEGER NOT NULL,
         lastAccessedAt INTEGER NOT NULL,
@@ -91,13 +105,6 @@ export class LongTermMemory {
       CREATE INDEX IF NOT EXISTS idx_ltm_accessed ON long_term_memory(lastAccessedAt);
       CREATE INDEX IF NOT EXISTS idx_ltm_importance ON long_term_memory(importance);
     `);
-
-    // Add importance column if upgrading from older schema
-    try {
-      this.db.prepare("SELECT importance FROM long_term_memory LIMIT 1").get();
-    } catch {
-      try { this.db.exec("ALTER TABLE long_term_memory ADD COLUMN importance REAL NOT NULL DEFAULT 1.0"); } catch { /* already exists */ }
-    }
   }
 
   // ── Memory CRUD ──────────────────────────────────────────────────────────

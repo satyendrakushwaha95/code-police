@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { marked } from 'marked';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github-dark.css';
@@ -85,9 +85,12 @@ interface MessageBubbleProps {
   pipelineStatus?: 'starting' | 'running' | 'complete' | 'failed' | 'cancelled';
   pipelineRunId?: string;
   usage?: MessageUsage;
+  suggestions?: string[];
   onEdit?: (newContent: string) => void;
   onRegenerate?: () => void;
   onDelete?: () => void;
+  onSendFollowUp?: (text: string) => void;
+  onRememberText?: (text: string) => void;
 }
 
 function formatTokenCount(n: number): string {
@@ -104,16 +107,56 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(2)}`;
 }
 
+type ViewMode = 'rendered' | 'raw' | 'preview';
+
+const COLLAPSE_LINE_THRESHOLD = 40;
+const COLLAPSE_CHAR_THRESHOLD = 2500;
+
 export default function MessageBubble({
-  role, content, isStreaming, timestamp, isPipeline, pipelineStatus, usage, onEdit, onRegenerate, onDelete
+  role, content, isStreaming, timestamp, isPipeline, pipelineStatus, usage,
+  suggestions, onEdit, onRegenerate, onDelete, onSendFollowUp, onRememberText,
 }: MessageBubbleProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(content);
   const [showActions, setShowActions] = useState(false);
+  const [selectionToolbar, setSelectionToolbar] = useState<{ text: string; x: number; y: number } | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('rendered');
+  const [isCollapsed, setIsCollapsed] = useState(true);
+  const messageContentRef = useRef<HTMLDivElement>(null);
+
+  const isLongContent = !isStreaming && role === 'assistant' &&
+    (content.split('\n').length > COLLAPSE_LINE_THRESHOLD || content.length > COLLAPSE_CHAR_THRESHOLD);
 
   useEffect(() => {
     setEditContent(content);
   }, [content]);
+
+  const handleTextSelect = useCallback(() => {
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.toString().trim()) {
+      setSelectionToolbar(null);
+      return;
+    }
+    const selectedText = selection.toString().trim();
+    if (selectedText.length < 3) { setSelectionToolbar(null); return; }
+
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+    const containerRect = messageContentRef.current?.getBoundingClientRect();
+    if (!containerRect) return;
+
+    setSelectionToolbar({
+      text: selectedText,
+      x: rect.left - containerRect.left + rect.width / 2,
+      y: rect.top - containerRect.top - 8,
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = () => setSelectionToolbar(null);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleSaveEdit = () => {
     if (editContent.trim() && onEdit) {
@@ -198,6 +241,19 @@ export default function MessageBubble({
         <div className="message-header">
           <span className="message-role">{role === 'user' ? 'You' : 'LocalMind'}</span>
           <span className="message-time">{timeStr}</span>
+          {role === 'assistant' && !isStreaming && content.length > 50 && (
+            <div className="view-mode-toggle">
+              <button className={`view-mode-btn ${viewMode === 'rendered' ? 'active' : ''}`} onClick={() => setViewMode('rendered')} title="Rendered">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+              <button className={`view-mode-btn ${viewMode === 'raw' ? 'active' : ''}`} onClick={() => setViewMode('raw')} title="Raw Markdown">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              </button>
+              <button className={`view-mode-btn ${viewMode === 'preview' ? 'active' : ''}`} onClick={() => setViewMode('preview')} title="Clean Preview">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              </button>
+            </div>
+          )}
         </div>
 
         {isEditing ? (
@@ -215,8 +271,19 @@ export default function MessageBubble({
             </div>
           </div>
         ) : (
-          <div className="message-content">
-            {renderMarkdown(content)}
+          <div
+            className={`message-content ${isLongContent && isCollapsed ? 'collapsed-content' : ''}`}
+            ref={messageContentRef}
+            onMouseUp={role === 'assistant' ? handleTextSelect : undefined}
+            style={{ position: 'relative' }}
+          >
+            {viewMode === 'rendered' && renderMarkdown(content)}
+            {viewMode === 'raw' && <pre className="raw-content">{content}</pre>}
+            {viewMode === 'preview' && (
+              <div className="preview-content">
+                {renderMarkdown(content)}
+              </div>
+            )}
             {isStreaming && (
               <div className="typing-indicator">
                 <span className="dot"></span>
@@ -239,7 +306,42 @@ export default function MessageBubble({
                 </span>
               </div>
             )}
+
+            {/* Selection toolbar */}
+            {selectionToolbar && (
+              <div
+                className="selection-toolbar"
+                style={{ left: selectionToolbar.x, top: selectionToolbar.y }}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <button onClick={() => { onSendFollowUp?.(`Explain this:\n\n${selectionToolbar.text}`); setSelectionToolbar(null); }}>Explain</button>
+                <button onClick={() => { onSendFollowUp?.(`Refactor this code:\n\n\`\`\`\n${selectionToolbar.text}\n\`\`\``); setSelectionToolbar(null); }}>Refactor</button>
+                <button onClick={() => { onRememberText?.(selectionToolbar.text); setSelectionToolbar(null); }}>Remember</button>
+                <button onClick={() => { navigator.clipboard.writeText(selectionToolbar.text); setSelectionToolbar(null); }}>Copy</button>
+              </div>
+            )}
+
+            {/* Collapse gradient overlay */}
+            {isLongContent && isCollapsed && (
+              <div className="collapse-gradient" />
+            )}
           </div>
+        )}
+
+        {/* Show more / Show less toggle */}
+        {isLongContent && (
+          <button className="collapse-toggle-btn" onClick={() => setIsCollapsed(!isCollapsed)}>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+              {isCollapsed
+                ? <><path d="M6 9l6 6 6-6"/></>
+                : <><path d="M18 15l-6-6-6 6"/></>
+              }
+            </svg>
+            {isCollapsed
+              ? `Show full response (${content.split('\n').length} lines)`
+              : 'Collapse'
+            }
+          </button>
         )}
 
         {role === 'assistant' && usage && !isStreaming && (
@@ -286,6 +388,18 @@ export default function MessageBubble({
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
               </button>
             )}
+          </div>
+        )}
+
+        {/* Follow-up suggestion chips */}
+        {role === 'assistant' && suggestions && suggestions.length > 0 && !isStreaming && (
+          <div className="suggestion-chips">
+            {suggestions.map((s, i) => (
+              <button key={i} className="suggestion-chip" onClick={() => onSendFollowUp?.(s)}>
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                {s}
+              </button>
+            ))}
           </div>
         )}
       </div>

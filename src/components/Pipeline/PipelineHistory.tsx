@@ -23,16 +23,17 @@ export default function PipelineHistory({ onRerun }: PipelineHistoryProps) {
     }
 
     setExpandedRun(runId);
-    
-    const plan = await getStageOutput(runId, 'plan');
-    const action = await getStageOutput(runId, 'action');
-    const review = await getStageOutput(runId, 'review');
-    const validate = await getStageOutput(runId, 'validate');
-    const execute = await getStageOutput(runId, 'execute');
-    
+
+    const run = history.find(r => r.id === runId);
+    const stageOrder = run?.stage_order || ['plan', 'action', 'review', 'validate', 'execute'];
+    const outputs: Record<string, any> = {};
+    for (const stage of stageOrder) {
+      outputs[stage] = await getStageOutput(runId, stage);
+    }
+
     setStageOutputs(prev => ({
       ...prev,
-      [runId]: { plan, action, review, validate, execute }
+      [runId]: { _stageOrder: stageOrder, ...outputs }
     }));
   };
 
@@ -166,15 +167,11 @@ export default function PipelineHistory({ onRerun }: PipelineHistoryProps) {
 
           {expandedRun === run.id && stageOutputs[run.id] && (
             <div className="history-stages">
-              <StageCard stage="plan" result={stageOutputs[run.id].plan} />
-              <StageCard stage="action" result={stageOutputs[run.id].action} />
-              <StageCard stage="review" result={stageOutputs[run.id].review} />
-              {stageOutputs[run.id].validate?.status !== 'pending' && (
-                <StageCard stage="validate" result={stageOutputs[run.id].validate} />
-              )}
-              {stageOutputs[run.id].execute?.status !== 'pending' && (
-                <StageCard stage="execute" result={stageOutputs[run.id].execute} />
-              )}
+              {(stageOutputs[run.id]._stageOrder || ['plan', 'action', 'review', 'validate', 'execute']).map((stage: string) => {
+                const stageResult = stageOutputs[run.id][stage];
+                if (!stageResult || stageResult.status === 'pending') return null;
+                return <StageCard key={stage} stage={stage} result={stageResult} />;
+              })}
             </div>
           )}
         </div>

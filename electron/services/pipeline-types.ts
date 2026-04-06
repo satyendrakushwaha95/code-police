@@ -48,6 +48,37 @@ export interface ExecuteResult {
   summary: string;
 }
 
+export interface ResearchResult {
+  files_examined: string[];
+  key_findings: string[];
+  relevant_patterns: string[];
+  existing_implementation: Array<{
+    file: string;
+    code: string;
+    relevance: string;
+  }>;
+  summary: string;
+}
+
+export interface SecurityResult {
+  verdict: 'PASS' | 'FAIL';
+  vulnerabilities: Array<{
+    severity: 'critical' | 'high' | 'medium' | 'low';
+    type: string;
+    description: string;
+    file: string;
+    line?: number;
+    recommendation: string;
+  }>;
+  dependency_issues: Array<{
+    package: string;
+    issue: string;
+    severity: string;
+  }>;
+  summary: string;
+  score: number;
+}
+
 export type StageStatus = 'pending' | 'running' | 'complete' | 'failed' | 'skipped';
 
 export interface StageResult<T> {
@@ -57,6 +88,23 @@ export interface StageResult<T> {
   output?: T;
   error?: string;
   real_time?: RealTimeProgress;
+}
+
+export type PipelineStage = 'plan' | 'action' | 'review' | 'validate' | 'execute' | 'research' | 'security';
+
+export type PipelineTemplate =
+  | 'quick-fix'
+  | 'standard'
+  | 'deep-review'
+  | 'docs-only'
+  | 'refactor';
+
+export interface PipelineTemplateConfig {
+  id: PipelineTemplate;
+  name: string;
+  description: string;
+  stages: PipelineStage[];
+  icon: string;
 }
 
 export interface PipelineRun {
@@ -69,22 +117,17 @@ export interface PipelineRun {
   retry_count: number;
   final_verdict?: 'PASS' | 'FAIL';
   current_stage?: PipelineStage;
-  stages: {
-    plan: StageResult<TaskPlan>;
-    action: StageResult<CodeOutput>;
-    review: StageResult<ReviewResult>;
-    validate: StageResult<ValidationResult>;
-    execute: StageResult<ExecuteResult>;
-  };
+  template?: PipelineTemplate;
+  stage_order: PipelineStage[];
+  stages: Record<string, StageResult<any>>;
 }
 
 export interface PipelineOptions {
   maxRetries: number;
   timeoutMs: number;
   autoExecute: boolean;
+  smartSkip?: boolean;
 }
-
-export type PipelineStage = 'plan' | 'action' | 'review' | 'validate' | 'execute';
 
 export type RealTimeStatus = 'idle' | 'sending' | 'processing' | 'waiting' | 'complete' | 'failed';
 

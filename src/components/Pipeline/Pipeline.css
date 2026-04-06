@@ -1306,3 +1306,237 @@
   flex-wrap: wrap;
   overflow: hidden;
 }
+
+/* --- Pipeline Tabs --- */
+.pipeline-tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.tab-btn {
+  padding: 4px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.tab-btn.active {
+  background: var(--accent);
+  color: white;
+}
+
+/* --- Template Badge in Run Header --- */
+.template-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  background: var(--accent);
+  color: white;
+  border-radius: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.template-pill {
+  font-size: 10px;
+  padding: 1px 6px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* --- Skipped Stage Pill --- */
+.execution-stage-pill.skipped {
+  opacity: 0.5;
+}
+
+.execution-pill-skip {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* --- Analytics Dashboard --- */
+.analytics-dashboard {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.analytics-loading,
+.analytics-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.analytics-empty .empty-icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+}
+
+.analytics-empty .empty-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.analytics-filters {
+  display: flex;
+  gap: 4px;
+}
+
+.time-filter {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.time-filter:hover {
+  background: var(--bg-hover);
+}
+
+.time-filter.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.analytics-summary-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.summary-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px 12px;
+  text-align: center;
+}
+
+.card-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.card-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.analytics-section {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+}
+
+.analytics-section h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.analytics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.analytics-table th {
+  text-align: left;
+  padding: 8px 10px;
+  color: var(--text-muted);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+
+.analytics-table td {
+  padding: 8px 10px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+}
+
+.analytics-table tr:last-child td {
+  border-bottom: none;
+}
+
+.model-cell {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bottleneck-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.bottleneck-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  min-width: 70px;
+  text-transform: capitalize;
+}
+
+.bottleneck-track {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.bottleneck-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.bottleneck-value {
+  font-size: 11px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  min-width: 40px;
+  text-align: right;
+}
+
+.bottleneck-fail-rate {
+  font-size: 10px;
+  color: var(--text-muted);
+  min-width: 60px;
+  text-align: right;
+}

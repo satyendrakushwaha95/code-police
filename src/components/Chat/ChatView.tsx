@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHand
 import { useConversations } from '../../store/ConversationContext';
 import { useSettings } from '../../store/SettingsContext';
 import { useWorkspace } from '../../store/WorkspaceContext';
+import { useAgents } from '../../store/AgentContext';
 import { ollamaService } from '../../services/ollama';
 import { buildContextFromAttachments } from '../../services/fileReader';
 import { calculateContextWindow } from '../../utils/contextWindow';
@@ -39,6 +40,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
   const { settings } = useSettings();
   const { showToast } = useToast();
   const { state: workspace } = useWorkspace();
+  const { state: agentState } = useAgents();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const activePipelineRef = useRef<{ convId: string; messageId: string } | null>(null);
   const pipelineMessageSentRef = useRef<boolean>(false);
@@ -46,6 +48,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
   const chatInputRef = useRef<{ focus: () => void }>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [activeModelOverride, setActiveModelOverride] = useState<{ providerId: string; model: string } | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<FileAttachment[]>([]);
   const [showSemanticSearch, setShowSemanticSearch] = useState(false);
   const [refactorCode, setRefactorCode] = useState<{ code: string; filename: string } | null>(null);
@@ -207,7 +210,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
       )
     : null;
 
-  const sendMessage = useCallback(async (content: string, attachments: FileAttachment[], runAsPipeline: boolean = false, agentId?: string) => {
+  const sendMessage = useCallback(async (content: string, attachments: FileAttachment[], runAsPipeline: boolean = false, agentId?: string, template?: string) => {
     if (!activeConversation) {
       dispatch({ type: 'CREATE_CONVERSATION', payload: { model: settings.model } });
       const newConvId = state.conversations.length > 0 ? state.conversations[0]?.id : null;
@@ -222,6 +225,36 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
       const cmdResult = await routeCommand(content, workspace.rootPath || undefined);
 
       if (cmdResult.intent !== 'none' && cmdResult.executed) {
+        // Handle onboard command specially — needs async IPC + streaming display
+        if (cmdResult.uiAction === 'onboard') {
+          if (!workspace.rootPath) {
+            showToast('Open a project folder first to use onboarding', 'error');
+            return;
+          }
+          dispatch({ type: 'ADD_MESSAGE', payload: { conversationId: convId, message: {
+            id: uuidv4(), role: 'user', content, timestamp: Date.now(),
+          }}});
+          const loadingMsgId = uuidv4();
+          dispatch({ type: 'ADD_MESSAGE', payload: { conversationId: convId, message: {
+            id: loadingMsgId, role: 'assistant', content: '🔍 Scanning project files and generating onboarding report...', timestamp: Date.now(), isStreaming: true,
+          }}});
+
+          try {
+            const ipc = (window as any).ipcRenderer;
+            const result = await ipc.invoke('project:onboard', { rootPath: workspace.rootPath });
+            dispatch({ type: 'UPDATE_MESSAGE', payload: {
+              conversationId: convId, messageId: loadingMsgId,
+              content: result.formatted, isStreaming: false,
+            }});
+          } catch (err: any) {
+            dispatch({ type: 'UPDATE_MESSAGE', payload: {
+              conversationId: convId, messageId: loadingMsgId,
+              content: `❌ Onboarding failed: ${err.message}`, isStreaming: false,
+            }});
+          }
+          return;
+        }
+
         // Handle UI panel openers
         if (cmdResult.uiAction) {
           const actionMap: Record<string, () => void> = {
@@ -293,7 +326,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
       dispatch({ type: 'ADD_MESSAGE', payload: { conversationId: convId, message: {
         id: pipelineMessageId,
         role: 'assistant',
-        content: `Task moved to Pipeline${agentId ? ' with custom agent' : ''}`,
+        content: `Task moved to Pipeline${template && template !== 'standard' ? ` (${template})` : ''}${agentId ? ' with custom agent' : ''}`,
         timestamp: Date.now(),
         isPipeline: true,
         pipelineStatus: 'running',
@@ -313,6 +346,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
           },
           projectRoot: workspace.rootPath,
           agentId,
+          template,
         });
         console.log('[ChatView] Pipeline started:', result.runId);
         
@@ -418,24 +452,30 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
     let model = settings.model;
     let providerId = 'ollama-default';
     let usedFallback = false;
-    try {
-      const routing = await ollamaService.resolveModel(
-        ollamaMessages,
-        {
-          temperature: settings.temperature,
-          top_p: settings.topP,
-          num_ctx: settings.contextLength,
-        },
-        'chat_general'
-      );
-      model = routing.resolvedModel;
-      providerId = routing.providerId || 'ollama-default';
-      usedFallback = routing.usedFallback;
-      if (usedFallback) {
-        showToast(`Using fallback model: ${model}`, 'info');
+
+    if (activeModelOverride) {
+      model = activeModelOverride.model;
+      providerId = activeModelOverride.providerId;
+    } else {
+      try {
+        const routing = await ollamaService.resolveModel(
+          ollamaMessages,
+          {
+            temperature: settings.temperature,
+            top_p: settings.topP,
+            num_ctx: settings.contextLength,
+          },
+          'chat_general'
+        );
+        model = routing.resolvedModel;
+        providerId = routing.providerId || 'ollama-default';
+        usedFallback = routing.usedFallback;
+        if (usedFallback) {
+          showToast(`Using fallback model: ${model}`, 'info');
+        }
+      } catch (err) {
+        console.warn('Failed to resolve model, using default:', err);
       }
-    } catch (err) {
-      console.warn('Failed to resolve model, using default:', err);
     }
 
     const streamId = `chat-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -481,10 +521,31 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
           },
         });
 
-        // Auto-extract memories from this exchange (background, non-blocking)
+        // Background tasks after response completes (non-blocking)
         const ipc = (window as any).ipcRenderer;
         if (ipc && content.length > 20) {
           const excerpt = `User: ${content.slice(0, 500)}\nAssistant: ${fullContent.slice(0, 500)}`;
+
+          // 1. Generate follow-up suggestions
+          ollamaService.chatComplete('ollama-default', model, [
+            { role: 'user', content: `Based on this conversation, suggest exactly 3 short follow-up questions or actions the user might want to do next. Each should be under 8 words. Return ONLY a JSON array of 3 strings, no explanation.\n\nUser: ${content.slice(0, 300)}\nAssistant: ${fullContent.slice(0, 500)}` }
+          ], { temperature: 0.5, max_tokens: 200 }, 'suggestions').then(result => {
+            try {
+              const match = result.content.match(/\[[\s\S]*\]/);
+              if (match) {
+                const suggestions = JSON.parse(match[0]).filter((s: any) => typeof s === 'string').slice(0, 3);
+                if (suggestions.length > 0) {
+                  dispatch({ type: 'UPDATE_MESSAGE', payload: {
+                    conversationId: convId,
+                    messageId: assistantMessage.id,
+                    suggestions,
+                  }});
+                }
+              }
+            } catch { /* best-effort */ }
+          }).catch(() => {});
+
+          // 2. Auto-extract memories
           ipc.invoke('memory:getExtractionPrompt', { conversationText: excerpt }).then(async (prompt: string) => {
             try {
               const result = await ollamaService.chatComplete('ollama-default', model, [
@@ -504,7 +565,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
                   }
                 }
               }
-            } catch { /* auto-extraction is best-effort */ }
+            } catch { /* best-effort */ }
           }).catch(() => {});
         }
 
@@ -631,13 +692,22 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
       dispatch({ type: 'SET_ACTIVE', payload: null });
     };
 
+    const handleOnboard = () => {
+      if (!workspace.rootPath) {
+        onOpenFilePanel?.();
+        return;
+      }
+      dispatch({ type: 'CREATE_CONVERSATION', payload: { model: settings.model } });
+      setPendingPrompt('/onboard');
+    };
+
     const quickActions = [
       { label: 'New Chat', icon: 'chat', action: () => dispatch({ type: 'CREATE_CONVERSATION', payload: { model: settings.model } }) },
       { label: 'Generate Code', icon: 'bolt', action: () => onOpenCodeGen?.() },
       { label: 'Refactor', icon: 'wrench', action: () => onOpenRefactor?.() },
       { label: 'Pipeline', icon: 'activity', action: () => onOpenPipelinePanel?.() },
       { label: 'Open Project', icon: 'folder', action: () => onOpenFilePanel?.() },
-      { label: 'Agents', icon: 'brain', action: () => onOpenAgentPanel?.() },
+      { label: 'Onboard', icon: 'scan', action: handleOnboard },
     ];
 
     return (
@@ -773,6 +843,11 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
                       <circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-5.07l-2.83 2.83M9.76 14.24l-2.83 2.83m11.14 0l-2.83-2.83M9.76 9.76L6.93 6.93"/>
                     </svg>
                   )}
+                  {item.icon === 'scan' && (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
+                    </svg>
+                  )}
                 </div>
                 <span className="quick-action-label">{item.label}</span>
               </button>
@@ -841,12 +916,30 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
         </div>
 
         <div className="messages-area">
-          {activeConversation.messages.length === 0 && (
-            <div className="empty-chat">
-              <p className="empty-hint">Type a message to start the conversation</p>
-            </div>
-          )}
-          {activeConversation.messages.map(msg => (
+          {activeConversation.messages.length === 0 && (() => {
+            const activeAgent = agentState.activeAgent;
+            const starters = activeAgent?.conversationStarters?.filter(s => s.trim());
+            if (starters && starters.length > 0) {
+              return (
+                <div className="chat-starters">
+                  <span className="chat-starters-label">{activeAgent?.icon} {activeAgent?.name} — Try one of these:</span>
+                  <div className="chat-starters-grid">
+                    {starters.map((s, i) => (
+                      <button key={i} className="chat-starter-chip" onClick={() => sendMessage(s, [])}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div className="empty-chat">
+                <p className="empty-hint">Type a message to start the conversation</p>
+              </div>
+            );
+          })()}
+          {activeConversation.messages.map((msg, idx) => (
             <MessageBubble
               key={msg.id}
               role={msg.role as 'user' | 'assistant' | 'system'}
@@ -857,9 +950,16 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
               pipelineStatus={msg.pipelineStatus}
               pipelineRunId={msg.pipelineRunId}
               usage={msg.usage}
+              suggestions={idx === activeConversation.messages.length - 1 ? msg.suggestions : undefined}
               onEdit={msg.role === 'user' ? (newContent) => handleEditMessage(msg.id, newContent) : undefined}
               onRegenerate={msg.role === 'assistant' ? () => handleRegenerate(msg.id) : undefined}
               onDelete={() => handleDeleteMessage(msg.id)}
+              onSendFollowUp={(text) => sendMessage(text, [])}
+              onRememberText={(text) => {
+                const ipc = (window as any).ipcRenderer;
+                ipc?.invoke('memory:add', { category: 'general', content: text, source: 'selection' });
+                showToast('Saved to memory', 'success');
+              }}
             />
           ))}
           <div ref={messagesEndRef} />
@@ -902,6 +1002,8 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
             connected={connected}
             initialValue={pendingPrompt || undefined}
             onCompare={onOpenCompare}
+            activeModel={activeModelOverride}
+            onModelChange={setActiveModelOverride}
           />
         </div>
       </div>

@@ -8,6 +8,12 @@ interface PipelinePanelProps {
   onClose: () => void;
 }
 
+const STAGE_LABELS: Record<string, string> = {
+  plan: 'Plan', action: 'Action', review: 'Review',
+  validate: 'Validate', execute: 'Execute',
+  research: 'Research', security: 'Security',
+};
+
 function ExecutionSummary({ run }: { run: any }) {
   const [elapsed, setElapsed] = useState(0);
 
@@ -30,9 +36,10 @@ function ExecutionSummary({ run }: { run: any }) {
     return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
   };
 
+  const stageOrder: string[] = run.stage_order || ['plan', 'action', 'review', 'validate', 'execute'];
+
   const getCurrentStage = () => {
-    const stages = ['plan', 'action', 'review', 'validate', 'execute'];
-    for (const stage of stages) {
+    for (const stage of stageOrder) {
       if (run.stages?.[stage]?.status === 'running') {
         return stage;
       }
@@ -40,24 +47,22 @@ function ExecutionSummary({ run }: { run: any }) {
     return null;
   };
 
-  const stageNames = ['plan', 'action', 'review', 'validate', 'execute'];
-  const stageLabels = ['Plan', 'Action', 'Review', 'Validate', 'Execute'];
   const currentStage = getCurrentStage();
 
   const getStageStatus = (stage: string) => {
     return run.stages?.[stage]?.status || 'pending';
   };
 
-  // Debug: log stage statuses
-  const stageStatuses = stageNames.map(s => ({ stage: s, status: getStageStatus(s) }));
+  const stageStatuses = stageOrder.map(s => ({ stage: s, status: getStageStatus(s) }));
   const completedCount = stageStatuses.filter(s => s.status === 'complete').length;
+  const skippedCount = stageStatuses.filter(s => s.status === 'skipped').length;
   const hasRunning = stageStatuses.some(s => s.status === 'running');
-  const totalStages = stageNames.length;
-  let progressPercent = Math.round((completedCount / totalStages) * 100);
-  if (hasRunning && completedCount < totalStages) {
-    progressPercent = Math.round((completedCount / totalStages) * 100) + 10;
+  const totalStages = stageOrder.length;
+  let progressPercent = Math.round(((completedCount + skippedCount) / totalStages) * 100);
+  if (hasRunning && completedCount + skippedCount < totalStages) {
+    progressPercent = Math.round(((completedCount + skippedCount) / totalStages) * 100) + 10;
   }
-  if (completedCount === totalStages) {
+  if (completedCount + skippedCount === totalStages) {
     progressPercent = 100;
   }
   if (run.status === 'complete' || run.status === 'failed') {
@@ -68,32 +73,32 @@ function ExecutionSummary({ run }: { run: any }) {
     <div className="execution-summary">
       <div className="summary-row">
         <span className="elapsed-label">Elapsed:</span>
-        <span className="elapsed-time">
-          {formatTime(elapsed)}
-        </span>
+        <span className="elapsed-time">{formatTime(elapsed)}</span>
+        {run.template && (
+          <span className="template-badge">{run.template}</span>
+        )}
         {currentStage && (
           <span className="current-stage-badge">
             <span className="spinner-mini">⟳</span>
-            {stageLabels[stageNames.indexOf(currentStage)]}
+            {STAGE_LABELS[currentStage] || currentStage}
           </span>
         )}
       </div>
       <div className="execution-progress-bar">
         <div className="execution-progress-track">
-          <div 
-            className="execution-progress-fill" 
-            style={{ 
-              width: `${progressPercent}%` 
-            }}
+          <div
+            className="execution-progress-fill"
+            style={{ width: `${progressPercent}%` }}
           />
         </div>
         <div className="execution-stage-pills">
-          {stageNames.map((stage, idx) => {
+          {stageOrder.map((stage, idx) => {
             const status = getStageStatus(stage);
             const isComplete = status === 'complete';
             const isRunning = status === 'running';
             const isFailed = status === 'failed';
-            
+            const isSkipped = status === 'skipped';
+
             return (
               <React.Fragment key={stage}>
                 <div className={`execution-stage-pill ${status}`}>
@@ -104,20 +109,164 @@ function ExecutionSummary({ run }: { run: any }) {
                       <span className="execution-pill-check">✓</span>
                     ) : isFailed ? (
                       <span className="execution-pill-fail">✗</span>
+                    ) : isSkipped ? (
+                      <span className="execution-pill-skip">⊘</span>
                     ) : (
                       <span className="execution-pill-num">{idx + 1}</span>
                     )}
-                    <span className="execution-pill-label">{stageLabels[idx]}</span>
+                    <span className="execution-pill-label">{STAGE_LABELS[stage] || stage}</span>
                   </div>
                 </div>
-                {idx < stageNames.length - 1 && (
-                  <div className={`execution-pill-connector ${isComplete ? 'filled' : ''}`} />
+                {idx < stageOrder.length - 1 && (
+                  <div className={`execution-pill-connector ${isComplete || isSkipped ? 'filled' : ''}`} />
                 )}
               </React.Fragment>
             );
           })}
         </div>
       </div>
+    </div>
+  );
+}
+
+function AnalyticsDashboard() {
+  const [summary, setSummary] = useState<any>(null);
+  const [byTemplate, setByTemplate] = useState<any[]>([]);
+  const [byStage, setByStage] = useState<any[]>([]);
+  const [byModel, setByModel] = useState<any[]>([]);
+  const [timeRange, setTimeRange] = useState<'7d' | '30d' | 'all'>('30d');
+
+  const ipcRenderer = (window as any).ipcRenderer;
+
+  useEffect(() => {
+    const days = timeRange === '7d' ? 7 : timeRange === '30d' ? 30 : 365;
+    const from = Date.now() - (days * 24 * 60 * 60 * 1000);
+
+    Promise.all([
+      ipcRenderer.invoke('pipeline:analytics:getSummary', { fromTimestamp: from }),
+      ipcRenderer.invoke('pipeline:analytics:getByTemplate', { fromTimestamp: from }),
+      ipcRenderer.invoke('pipeline:analytics:getByStage', { fromTimestamp: from }),
+      ipcRenderer.invoke('pipeline:analytics:getByModel', { fromTimestamp: from }),
+    ]).then(([s, t, st, m]) => {
+      setSummary(s);
+      setByTemplate(t);
+      setByStage(st);
+      setByModel(m);
+    });
+  }, [timeRange]);
+
+  if (!summary) return <div className="analytics-loading">Loading analytics...</div>;
+
+  const formatDuration = (ms: number) => {
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 60000) return `${Math.round(ms / 1000)}s`;
+    return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
+  };
+
+  if (summary.totalRuns === 0) {
+    return (
+      <div className="analytics-empty">
+        <div className="empty-icon">📊</div>
+        <p>No analytics data yet</p>
+        <p className="empty-hint">Run some pipelines to see performance insights</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="analytics-dashboard">
+      <div className="analytics-filters">
+        {(['7d', '30d', 'all'] as const).map(range => (
+          <button
+            key={range}
+            className={`time-filter ${timeRange === range ? 'active' : ''}`}
+            onClick={() => setTimeRange(range)}
+          >
+            {range === '7d' ? '7 Days' : range === '30d' ? '30 Days' : 'All Time'}
+          </button>
+        ))}
+      </div>
+
+      <div className="analytics-summary-cards">
+        <div className="summary-card">
+          <div className="card-value">{summary.successRate}%</div>
+          <div className="card-label">Success Rate</div>
+        </div>
+        <div className="summary-card">
+          <div className="card-value">{formatDuration(summary.avgDurationMs)}</div>
+          <div className="card-label">Avg Duration</div>
+        </div>
+        <div className="summary-card">
+          <div className="card-value">{summary.totalRuns}</div>
+          <div className="card-label">Total Runs</div>
+        </div>
+        <div className="summary-card">
+          <div className="card-value">{summary.avgRetries}</div>
+          <div className="card-label">Avg Retries</div>
+        </div>
+      </div>
+
+      {byTemplate.length > 0 && (
+        <div className="analytics-section">
+          <h3>Template Performance</h3>
+          <table className="analytics-table">
+            <thead>
+              <tr><th>Template</th><th>Success</th><th>Avg Time</th><th>Count</th></tr>
+            </thead>
+            <tbody>
+              {byTemplate.map((t: any) => (
+                <tr key={t.template}>
+                  <td>{t.template}</td>
+                  <td>{Math.round((t.passed / t.count) * 100)}%</td>
+                  <td>{formatDuration(t.avg_duration_ms)}</td>
+                  <td>{t.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {byStage.length > 0 && (
+        <div className="analytics-section">
+          <h3>Stage Bottlenecks</h3>
+          {byStage.map((s: any) => {
+            const maxDuration = Math.max(...byStage.map((x: any) => x.avg_duration_ms || 0));
+            const percentage = maxDuration > 0 ? ((s.avg_duration_ms || 0) / maxDuration) * 100 : 0;
+            return (
+              <div key={s.stage} className="bottleneck-bar">
+                <div className="bottleneck-label">{STAGE_LABELS[s.stage] || s.stage}</div>
+                <div className="bottleneck-track">
+                  <div className="bottleneck-fill" style={{ width: `${percentage}%` }} />
+                </div>
+                <div className="bottleneck-value">{formatDuration(s.avg_duration_ms || 0)}</div>
+                <div className="bottleneck-fail-rate">{s.failures}/{s.executions} failed</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {byModel.length > 0 && (
+        <div className="analytics-section">
+          <h3>Model Performance</h3>
+          <table className="analytics-table">
+            <thead>
+              <tr><th>Model</th><th>Success</th><th>Avg Time</th><th>Runs</th></tr>
+            </thead>
+            <tbody>
+              {byModel.map((m: any) => (
+                <tr key={m.model}>
+                  <td className="model-cell">{m.model}</td>
+                  <td>{Math.round((m.successes / m.executions) * 100)}%</td>
+                  <td>{formatDuration(m.avg_duration_ms || 0)}</td>
+                  <td>{m.executions}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -129,9 +278,10 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
   const [manualInput, setManualInput] = useState<Record<string, string>>({});
   const [stopModalData, setStopModalData] = useState<{ runId: string } | null>(null);
   const [stopPrompt, setStopPrompt] = useState('');
+  const [activeTab, setActiveTab] = useState<'runs' | 'analytics'>('runs');
   const panelRef = useRef<HTMLDivElement>(null);
   const isResizing = useRef(false);
-  
+
   const { cancel, activeRun, history, deleteRun, retryFix, analyzeAndRetry, refreshHistory } = usePipeline();
 
   useEffect(() => {
@@ -147,7 +297,6 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
 
   useEffect(() => {
     if (history.length > 0 && history[0].status === 'running') {
-      // Auto-expand the first running pipeline
       setExpandedItems(prev => new Set([...prev, history[0].id]));
     }
   }, [history]);
@@ -168,28 +317,28 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
     e.preventDefault();
     isResizing.current = true;
     document.body.style.cursor = 'col-resize';
-    
+
     const panelElement = panelRef.current;
     if (!panelElement) return;
-    
+
     const panelRect = panelElement.getBoundingClientRect();
     const startWidth = panelRect.width;
     const startX = e.clientX;
-    
+
     const handleMouseMove = (moveEvent: MouseEvent) => {
       if (!isResizing.current) return;
       const deltaX = startX - moveEvent.clientX;
       const newWidth = startWidth + deltaX;
       setPanelWidth(Math.min(Math.max(newWidth, 400), 900));
     };
-    
+
     const handleMouseUp = () => {
       isResizing.current = false;
       document.body.style.cursor = '';
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-    
+
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
   }, []);
@@ -197,17 +346,17 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
 
   const allPipelines = useMemo(() => {
     const pipelines: any[] = [];
-    
+
     if (activeRun) {
       pipelines.push(activeRun);
     }
-    
+
     history.forEach(run => {
       if (!activeRun || run.id !== activeRun.id) {
         pipelines.push(run);
       }
     });
-    
+
     return pipelines;
   }, [history, activeRun]);
 
@@ -223,14 +372,14 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
 
   const handleStopWithPrompt = async () => {
     if (!stopModalData || !stopPrompt.trim()) return;
-    
+
     const runId = stopModalData.runId;
     setStopModalData(null);
     setStopPrompt('');
-    
+
     try {
       const result = await analyzeAndRetry(runId, stopPrompt);
-      
+
       switch (result.action) {
         case 'restart_required':
           showToast('Pipeline cleared. Start a new pipeline from chat.', 'info');
@@ -260,7 +409,7 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
     if (!run?.stages?.action?.output) return;
 
     const codeOutput = run.stages.action.output;
-    
+
     for (const change of codeOutput.file_changes) {
       try {
         const confirmed = await (window as any).ipcRenderer.invoke('dialog:confirmAction', {
@@ -291,10 +440,9 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
     const reviewOutput = run.stages?.review?.output;
     const suggestions = reviewOutput?.suggestions || [];
     const userInput = manualInput[run.id] || '';
-    
-    // Include previous action error if it exists
+
     const actionError = run.stages?.action?.error;
-    
+
     const allSuggestions = [...suggestions];
     if (actionError) {
       allSuggestions.push(`Previous error that needs to be fixed: ${actionError}`);
@@ -302,7 +450,7 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
     if (userInput.trim()) {
       allSuggestions.push(`User feedback: ${userInput.trim()}`);
     }
-    
+
     if (allSuggestions.length === 0) {
       showToast('No suggestions or manual input provided', 'info');
       return;
@@ -324,35 +472,38 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
     const isActive = run.status === 'running';
     const isExpanded = expandedItems.has(run.id);
     const isFailed = run.status === 'failed' || run.final_verdict === 'FAIL';
-    
-    const getStageProgress = (run: any) => {
-      const stages = ['plan', 'action', 'review', 'validate', 'execute'];
-      const completed = stages.filter(s => 
-        run.stages?.[s]?.status === 'complete'
+    const stageOrder: string[] = run.stage_order || ['plan', 'action', 'review', 'validate', 'execute'];
+
+    const getStageProgress = () => {
+      const completed = stageOrder.filter(s =>
+        run.stages?.[s]?.status === 'complete' || run.stages?.[s]?.status === 'skipped'
       ).length;
-      const total = stages.filter(s => 
+      const total = stageOrder.filter(s =>
         run.stages?.[s]?.status !== 'pending'
       ).length;
       return { completed, total };
     };
-    
-    const progress = getStageProgress(run);
+
+    const progress = getStageProgress();
 
     return (
       <div key={run.id} className={`pipeline-item ${isExpanded ? 'expanded' : ''} ${isActive ? 'active-item' : ''} ${isFailed ? 'failed-item' : ''}`}>
-        <div 
+        <div
           className="pipeline-item-header accordion-trigger"
           onClick={() => toggleExpand(run.id)}
         >
           <div className="pipeline-item-info">
             <span className={`status-badge ${run.status}`}>{run.status}</span>
+            {run.template && run.template !== 'standard' && (
+              <span className="template-pill">{run.template}</span>
+            )}
             <span className="pipeline-task">{run.task_description.slice(0, 60)}{run.task_description.length > 60 ? '...' : ''}</span>
           </div>
           <div className="pipeline-item-meta">
             <span className="pipeline-id">{run.id.slice(0, 8)}</span>
             <span className="pipeline-progress">{progress.completed}/{progress.total}</span>
             {isFailed && (
-              <button 
+              <button
                 className="btn btn-primary btn-xs"
                 onClick={(e) => { e.stopPropagation(); handleRetryWithSuggestions(run); }}
                 disabled={retryingRunId === run.id}
@@ -367,26 +518,22 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
             </span>
           </div>
         </div>
-        
+
         {isExpanded && (
           <div className="pipeline-item-content">
             <ExecutionSummary run={run} />
-            
+
             <div className="pipeline-item-stages">
-              <StageCard stage="plan" result={run.stages?.plan} />
-              <StageCard stage="action" result={run.stages?.action} attempt={run.retry_count + 1} />
-              <StageCard stage="review" result={run.stages?.review} attempt={run.retry_count + 1} />
-              {run.stages?.validate?.status !== 'pending' && (
-                <StageCard stage="validate" result={run.stages?.validate} />
-              )}
-              {run.stages?.execute?.status !== 'pending' && (
-                <StageCard stage="execute" result={run.stages?.execute} />
-              )}
+              {stageOrder.map((stage: string) => {
+                const stageResult = run.stages?.[stage];
+                if (!stageResult || (stageResult.status === 'pending' && !isActive)) return null;
+                return <StageCard key={stage} stage={stage} result={stageResult} attempt={stage === 'action' || stage === 'review' ? run.retry_count + 1 : undefined} />;
+              })}
             </div>
 
             <div className="pipeline-item-footer">
               {run.status === 'complete' && run.final_verdict === 'PASS' && (
-                <button 
+                <button
                   className="btn btn-success btn-sm"
                   onClick={(e) => { e.stopPropagation(); handleApplyChanges(run); }}
                 >
@@ -424,7 +571,7 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
                     rows={3}
                   />
                 </div>
-                <button 
+                <button
                   className="btn btn-primary btn-sm"
                   onClick={(e) => { e.stopPropagation(); handleRetryWithSuggestions(run); }}
                   disabled={retryingRunId === run.id}
@@ -436,15 +583,15 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
 
             <div className="pipeline-item-actions">
               {isActive && (
-                <button 
-                  className="btn btn-danger btn-sm" 
+                <button
+                  className="btn btn-danger btn-sm"
                   onClick={(e) => { e.stopPropagation(); handleCancel(run.id); }}
                 >
                   Stop
                 </button>
               )}
-              <button 
-                className="btn btn-secondary btn-sm" 
+              <button
+                className="btn btn-secondary btn-sm"
                 onClick={(e) => { e.stopPropagation(); handleDelete(run.id); }}
               >
                 Delete
@@ -471,13 +618,13 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
               rows={4}
             />
             <div className="modal-actions">
-              <button 
+              <button
                 className="btn btn-secondary"
                 onClick={() => setStopModalData(null)}
               >
                 Cancel
               </button>
-              <button 
+              <button
                 className="btn btn-primary"
                 onClick={handleStopWithPrompt}
                 disabled={!stopPrompt.trim()}
@@ -488,14 +635,28 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
           </div>
         </div>
       )}
-    
+
       <div className="pipeline-panel" ref={panelRef} style={{ width: `${panelWidth}px` }}>
       <div className="pipeline-resize-handle" onMouseDown={startResize} />
       <div className="panel-header">
         <h2>
           Pipeline Dashboard
-          <span className="pipeline-help-tip" data-tip="The Pipeline executes tasks through 5 stages: Plan (analyze requirements), Action (generate code), Review (check quality), Validate (test correctness), and Execute (apply changes).">?</span>
+          <span className="pipeline-help-tip" data-tip="The Pipeline executes tasks through configurable stages. Select a template to customize the stage sequence.">?</span>
         </h2>
+        <div className="pipeline-tabs">
+          <button
+            className={`tab-btn ${activeTab === 'runs' ? 'active' : ''}`}
+            onClick={() => setActiveTab('runs')}
+          >
+            Runs
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'analytics' ? 'active' : ''}`}
+            onClick={() => setActiveTab('analytics')}
+          >
+            Analytics
+          </button>
+        </div>
         <span className="pipeline-count">{allPipelines.length} total</span>
         <button className="btn-icon refresh-btn" onClick={() => refreshHistory()} title="Refresh">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -512,7 +673,9 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
       </div>
 
       <div className="panel-content">
-        {allPipelines.length === 0 ? (
+        {activeTab === 'analytics' ? (
+          <AnalyticsDashboard />
+        ) : allPipelines.length === 0 ? (
           <div className="empty-queue">
             <div className="empty-icon">📋</div>
             <p>No pipelines</p>

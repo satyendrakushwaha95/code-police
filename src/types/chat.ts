@@ -28,6 +28,7 @@ export interface Message {
   pipelineStatus?: 'starting' | 'running' | 'complete' | 'failed' | 'cancelled';
   pipelineRunId?: string;
   usage?: MessageUsage;
+  suggestions?: string[];
 }
 
 export interface Conversation {

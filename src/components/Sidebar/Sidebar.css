@@ -30,6 +30,8 @@
   opacity: 0.5;
 }
 
+/* ─── Collapsed ─────────────────────────────────────────────────────────────── */
+
 .sidebar-collapsed {
   width: 56px;
   min-width: 56px;
@@ -43,11 +45,14 @@
   padding: 16px 0;
 }
 
+/* ─── Header (fixed) ────────────────────────────────────────────────────────── */
+
 .sidebar-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 16px 12px;
+  padding: 12px 12px 8px;
+  flex-shrink: 0;
 }
 
 .sidebar-brand {
@@ -59,26 +64,29 @@
 }
 
 .brand-icon {
-  height: 42px;
+  height: 36px;
   width: auto;
   max-width: 100%;
   object-fit: contain;
 }
+
+/* ─── New Chat button (fixed) ───────────────────────────────────────────────── */
 
 .new-chat-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin: 0 12px 12px;
-  padding: 10px 16px;
+  margin: 0 12px 8px;
+  padding: 9px 14px;
   background: var(--accent-gradient);
   color: white;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13px;
   transition: all var(--transition-fast);
   box-shadow: var(--shadow-sm);
+  flex-shrink: 0;
 }
 
 .new-chat-btn:hover {
@@ -87,24 +95,85 @@
 }
 
 .new-chat-btn svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 
-.sidebar-tools {
+/* ─── Scrollable body (the ONLY scrollable area) ────────────────────────────── */
+
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+}
+
+.sidebar-body::-webkit-scrollbar {
+  width: 5px;
+}
+
+.sidebar-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-body::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.sidebar-body::-webkit-scrollbar-thumb:hover {
+  background: var(--border-light);
+}
+
+/* ─── Section headers (collapsible groups) ──────────────────────────────────── */
+
+.sidebar-section {
+  margin-bottom: 2px;
+}
+
+.sidebar-section-header {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 0 12px 12px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px 4px;
+  cursor: pointer;
+  user-select: none;
 }
 
-.sidebar-tool-btn {
+.sidebar-section-header:hover .sidebar-section-label {
+  color: var(--text-secondary);
+}
+
+.sidebar-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+
+.sidebar-section-chevron {
+  width: 12px;
+  height: 12px;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.sidebar-section-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.sidebar-section-items {
+  padding: 0 8px 4px;
+}
+
+/* ─── Menu items (tools, panels, etc.) ──────────────────────────────────────── */
+
+.sidebar-menu-item {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px;
+  padding: 7px 10px;
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
@@ -114,46 +183,55 @@
   cursor: pointer;
   transition: all var(--transition-fast);
   text-align: left;
+  width: 100%;
 }
 
-.sidebar-tool-btn:hover {
+.sidebar-menu-item:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-.sidebar-tool-btn svg {
-  width: 18px;
-  height: 18px;
+.sidebar-menu-item svg {
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
   color: var(--accent);
 }
 
+.sidebar-menu-item:hover svg {
+  color: var(--accent);
+}
+
+/* ─── Divider ───────────────────────────────────────────────────────────────── */
+
 .sidebar-divider {
   height: 1px;
   background: var(--border);
-  margin: 4px 0;
+  margin: 6px 12px;
 }
+
+/* ─── Search ────────────────────────────────────────────────────────────────── */
 
 .sidebar-search {
   position: relative;
-  margin: 0 12px 12px;
+  padding: 4px 12px 6px;
 }
 
 .sidebar-search .search-icon {
   position: absolute;
-  left: 10px;
+  left: 22px;
   top: 50%;
   transform: translateY(-50%);
-  width: 15px;
-  height: 15px;
+  width: 14px;
+  height: 14px;
   color: var(--text-tertiary);
   pointer-events: none;
 }
 
 .sidebar-search input {
   width: 100%;
-  padding: 8px 12px 8px 32px;
-  font-size: 13px;
+  padding: 7px 10px 7px 30px;
+  font-size: 12px;
   background: var(--bg-tertiary);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -163,28 +241,28 @@
   border-color: var(--border-focus);
 }
 
+/* ─── Conversation List ─────────────────────────────────────────────────────── */
+
 .conversation-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0 8px;
+  padding: 0 8px 8px;
 }
 
 .no-conversations {
   text-align: center;
-  padding: 32px 16px;
+  padding: 20px 16px;
   color: var(--text-tertiary);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .conversation-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 8px 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   transition: all var(--transition-fast);
-  margin-bottom: 2px;
+  margin-bottom: 1px;
   position: relative;
 }
 
@@ -210,8 +288,8 @@
 
 .conv-icon {
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -219,8 +297,8 @@
 }
 
 .conv-icon svg {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
 }
 
 .conv-info {
@@ -228,11 +306,11 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .conv-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--text-primary);
   overflow: hidden;
@@ -241,12 +319,12 @@
 }
 
 .conv-meta {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-tertiary);
 }
 
 .rename-input {
-  font-size: 13px;
+  font-size: 12px;
   padding: 2px 6px;
   background: var(--bg-input);
   border: 1px solid var(--border-focus);
@@ -266,8 +344,8 @@
 }
 
 .conv-action-btn {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -287,44 +365,44 @@
 }
 
 .conv-action-btn svg {
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
 }
 
-.sidebar-footer {
-  padding: 12px;
-  border-top: 1px solid var(--border);
+/* ─── Window Controls ───────────────────────────────────────────────────────── */
+
+.window-controls {
+  display: flex;
+  gap: 6px;
 }
 
-.sidebar-footer-btn {
+.window-controls-collapsed {
+  justify-content: center;
+  padding: 0 8px;
+  margin-bottom: 4px;
+}
+
+.window-btn {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  transition: all var(--transition-fast);
+  justify-content: center;
+  font-size: 0;
+  border: none;
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
 }
 
-.sidebar-footer-btn:hover {
-  background: var(--bg-hover);
-}
+.window-btn span { display: none; }
+.window-btn:hover span { display: block; font-size: 10px; line-height: 1; }
+.window-btn.close { background: #ff5f57; }
+.window-btn.minimize { background: #febc2e; }
+.window-btn.maximize { background: #28c840; }
 
-.sidebar-footer-btn svg {
-  width: 18px;
-  height: 18px;
-  color: var(--accent);
-}
-
-.sidebar-footer-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.sidebar-footer-btn svg {
-  width: 16px;
-  height: 16px;
-}
+/* ─── Legacy compat (hide old classes) ──────────────────────────────────────── */
+.sidebar-tools { display: none; }
+.sidebar-tool-btn { display: none; }
+.sidebar-footer-btn { display: none; }
+.sidebar-footer { display: none; }

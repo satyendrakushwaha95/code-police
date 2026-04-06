@@ -60,6 +60,7 @@ export interface AgentConfig {
   constraints: AgentConstraints;
   knowledgeBase: KnowledgeBaseConfig;
   pipelineStages: AgentPipelineConfig;
+  conversationStarters?: string[];
 }
 
 export interface CreateAgentInput {
@@ -72,6 +73,7 @@ export interface CreateAgentInput {
   enabledTools?: AgentToolConfig[];
   constraints?: Partial<AgentConstraints>;
   pipelineStages?: Partial<AgentPipelineConfig>;
+  conversationStarters?: string[];
 }
 
 export interface UpdateAgentInput extends Partial<CreateAgentInput> {
