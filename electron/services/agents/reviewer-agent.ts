@@ -1,13 +1,14 @@
 import { OllamaChatMessage } from '../embeddings';
 import { getSharedOllama } from '../shared-ollama';
 import { RoutingDecision } from '../model-router';
-import { TaskPlan, CodeOutput, ReviewResult } from '../pipeline-types';
+import { TaskPlan, CodeOutput, ReviewResult, StreamCallback } from '../pipeline-types';
 
 export class ReviewerAgent {
   async execute(
     plan: TaskPlan,
     codeOutput: CodeOutput,
-    modelDecision: RoutingDecision
+    modelDecision: RoutingDecision,
+    onChunk?: StreamCallback
   ): Promise<ReviewResult> {
     const fileChangesSection = codeOutput.file_changes
       .map(change => `### ${change.operation}: ${change.file_path}\n${change.content}\n\n*${change.explanation}*`)
@@ -68,6 +69,7 @@ Review these changes to verify the CORE OBJECTIVE is achieved. Minor deviations 
       for await (const chunk of ollama.chat(modelDecision.resolvedModel, messages)) {
         if (chunk.message?.content) {
           rawOutput += chunk.message.content;
+          onChunk?.(chunk.message.content, rawOutput);
         }
       }
 

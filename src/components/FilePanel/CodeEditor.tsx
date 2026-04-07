@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import { useSettings } from '../../store/SettingsContext';
 
@@ -19,6 +20,8 @@ export default function CodeEditor({
   onSave
 }: CodeEditorProps) {
   const { settings } = useSettings();
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
 
   const handleEditorChange = (value: string | undefined) => {
     if (onChange && value !== undefined) {
@@ -26,13 +29,13 @@ export default function CodeEditor({
     }
   };
 
-  const handleEditorMount = (editor: any) => {
-    if (!readOnly && onSave) {
+  const handleEditorMount = (editor: any, monaco: any) => {
+    if (!readOnly) {
       editor.addCommand(
         // eslint-disable-next-line no-bitwise
-        editor.getKeyMod() | editor.getKeyMod('Ctrl', 'KeyS'),
+        monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
         () => {
-          onSave(editor.getValue());
+          onSaveRef.current?.(editor.getValue());
         }
       );
     }

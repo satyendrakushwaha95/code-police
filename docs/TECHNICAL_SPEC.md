@@ -125,8 +125,9 @@ localmind-ai/
 │   │   │   ├── PipelineHistory.tsx
 │   │   │   └── Pipeline.css
 │   │   ├── FilePanel/
-│   │   │   ├── FilePanel.tsx           # Multi-file editor with line numbers
-│   │   │   ├── FileTree.tsx
+│   │   │   ├── FilePanel.tsx           # Monaco-powered editor with direct save, dirty confirmation, pipeline integration
+│   │   │   ├── FileTree.tsx            # Directory tree with expand/collapse persistence
+│   │   │   ├── CodeEditor.tsx          # Monaco Editor wrapper with Ctrl+S keybinding and large-file fallback
 │   │   │   └── FilePanel.css
 │   │   ├── Terminal/
 │   │   │   └── TerminalPanel.tsx
@@ -152,6 +153,7 @@ localmind-ai/
 │   │   ├── usePipeline.ts
 │   │   ├── useModelRouter.ts
 │   │   ├── useCompare.ts              # Multi-model comparison hook
+│   │   ├── useEditorState.ts          # Editor session persistence (open tabs, expanded folders)
 │   │   ├── useToast.ts
 │   │   └── useKeyboardShortcuts.ts
 │   ├── store/
@@ -479,8 +481,9 @@ Two-phase project analysis engine.
 - `routing:updateConfig` - Update routing configuration
 
 ### Files
-- `fs:readFile` - Read file contents
-- `fs:writeFile` - Write file contents
+- `fs:readFile` - Read file contents (UTF-8)
+- `fs:writeFile` - Write file contents to disk (UTF-8); returns `{ success, error? }`
+- `fs:openPath` - Open a directory path and return `{ rootPath, folderName, filesIndex }`; also used by `refreshFilesIndex()` to re-scan the workspace
 - `fs:listDirectory` - List directory contents
 - `tools:execute` - Execute tool (write_file, read_file, etc.)
 
@@ -602,6 +605,7 @@ Two-phase project analysis engine.
 - Root path
 - Files index
 - Indexing state
+- `refreshFilesIndex()` — re-scans the workspace root via `fs:openPath` IPC (called automatically on `pipeline:complete`)
 
 **AgentContext:**
 - Custom agents list

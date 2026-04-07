@@ -25,10 +25,14 @@ export interface Message {
   isStreaming?: boolean;
   attachments?: FileAttachment[];
   isPipeline?: boolean;
-  pipelineStatus?: 'starting' | 'running' | 'complete' | 'failed' | 'cancelled';
+  pipelineStatus?: 'starting' | 'running' | 'complete' | 'failed' | 'cancelled' | 'awaiting_approval';
   pipelineRunId?: string;
   usage?: MessageUsage;
   suggestions?: string[];
+  approvalData?: {
+    runId: string;
+    stage: string;
+  };
 }
 
 export interface Conversation {

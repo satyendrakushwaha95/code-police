@@ -33,8 +33,15 @@ export const PIPELINE_TEMPLATES: PipelineTemplateConfig[] = [
     id: 'refactor',
     name: 'Refactor',
     description: 'Code restructuring with safety checks',
-    stages: ['research', 'action', 'review', 'validate', 'execute'],
+    stages: ['research', 'plan', 'action', 'review', 'validate', 'execute'],
     icon: '🔧',
+  },
+  {
+    id: 'complex',
+    name: 'Complex Task',
+    description: 'Large tasks decomposed into subtasks',
+    stages: ['research', 'decompose', 'plan', 'action', 'review', 'validate', 'execute'],
+    icon: '🧩',
   },
 ];
 

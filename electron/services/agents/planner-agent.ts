@@ -1,7 +1,7 @@
 import { OllamaChatMessage } from '../embeddings';
 import { getSharedOllama } from '../shared-ollama';
 import { getModelRouter, RoutingDecision } from '../model-router';
-import { TaskPlan } from '../pipeline-types';
+import { TaskPlan, StreamCallback } from '../pipeline-types';
 import type { AgentConfig } from '../agent-types';
 
 export class PlannerError extends Error {
@@ -21,7 +21,8 @@ export class PlannerAgent {
     taskDescription: string,
     context: Array<{ content: string; relativeFilePath: string }>,
     modelDecision: RoutingDecision,
-    options?: PlannerOptions
+    options?: PlannerOptions,
+    onChunk?: StreamCallback
   ): Promise<TaskPlan> {
     const contextSection = context.length > 0
       ? `\n\n## Relevant Codebase Context\n\n${context.map(c => `### ${c.relativeFilePath}\n\`\`\`\n${c.content}\n\`\`\``).join('\n\n')}`
@@ -105,6 +106,7 @@ Create a focused plan that addresses exactly what was asked.`;
       for await (const chunk of ollama.chat(model, messages)) {
         if (chunk.message?.content) {
           rawOutput += chunk.message.content;
+          onChunk?.(chunk.message.content, rawOutput);
         }
       }
 

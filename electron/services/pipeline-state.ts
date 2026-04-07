@@ -1,8 +1,9 @@
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import { app } from 'electron';
-import { PipelineRun, StageResult, PipelineStage, PipelineTemplate, TaskPlan, CodeOutput, ReviewResult, ValidationResult, ExecuteResult } from './pipeline-types';
+import { PipelineRun, StageResult, PipelineStage, PipelineTemplate } from './pipeline-types';
 import { getTemplateById, getDefaultTemplate } from './pipeline-templates';
+import { PipelineContext } from './pipeline-graph';
 
 export class PipelineStateStore {
   private db: ReturnType<typeof Database>;
@@ -76,11 +77,15 @@ export class PipelineStateStore {
       CREATE INDEX IF NOT EXISTS idx_pipeline_stage_analytics_stage ON pipeline_stage_analytics(stage);
     `);
 
-    // Migrations for existing tables
     const migrations = [
       `ALTER TABLE pipeline_runs ADD COLUMN project_root TEXT`,
       `ALTER TABLE pipeline_runs ADD COLUMN template TEXT`,
       `ALTER TABLE pipeline_runs ADD COLUMN stage_order TEXT`,
+      `ALTER TABLE pipeline_runs ADD COLUMN context_snapshot TEXT`,
+      `ALTER TABLE pipeline_runs ADD COLUMN last_completed_stage TEXT`,
+      `ALTER TABLE pipeline_runs ADD COLUMN agent_id TEXT`,
+      `ALTER TABLE pipeline_runs ADD COLUMN parent_run_id TEXT`,
+      `ALTER TABLE pipeline_runs ADD COLUMN subtask_index INTEGER`,
     ];
     for (const sql of migrations) {
       try { this.db.exec(sql); } catch (e) { /* Column already exists */ }
@@ -91,7 +96,10 @@ export class PipelineStateStore {
     taskDescription: string,
     idOverride?: string,
     projectRoot?: string,
-    template?: PipelineTemplate
+    template?: PipelineTemplate,
+    agentId?: string,
+    parentRunId?: string,
+    subtaskIndex?: number
   ): Promise<PipelineRun> {
     const id = idOverride || `run_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const createdAt = Date.now();
@@ -102,10 +110,10 @@ export class PipelineStateStore {
     const effectiveTemplate = template || 'standard';
 
     const stmt = this.db.prepare(`
-      INSERT INTO pipeline_runs (id, task_description, project_root, status, created_at, retry_count, template, stage_order)
-      VALUES (?, ?, ?, 'running', ?, 0, ?, ?)
+      INSERT INTO pipeline_runs (id, task_description, project_root, status, created_at, retry_count, template, stage_order, agent_id, parent_run_id, subtask_index)
+      VALUES (?, ?, ?, 'running', ?, 0, ?, ?, ?, ?, ?)
     `);
-    stmt.run(id, taskDescription, projectRoot || null, createdAt, effectiveTemplate, JSON.stringify(stageOrder));
+    stmt.run(id, taskDescription, projectRoot || null, createdAt, effectiveTemplate, JSON.stringify(stageOrder), agentId || null, parentRunId || null, subtaskIndex ?? null);
 
     const stages: Record<string, StageResult<any>> = {};
     for (const stage of stageOrder) {
@@ -122,6 +130,9 @@ export class PipelineStateStore {
       template: effectiveTemplate,
       stage_order: stageOrder,
       stages,
+      agent_id: agentId,
+      parent_run_id: parentRunId,
+      subtask_index: subtaskIndex,
     };
   }
 
@@ -136,11 +147,7 @@ export class PipelineStateStore {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
-      runId,
-      stage,
-      attempt,
-      result.status,
-      result.model_used,
+      runId, stage, attempt, result.status, result.model_used,
       result.duration_ms || null,
       result.output ? JSON.stringify(result.output) : null,
       result.error || null
@@ -149,145 +156,117 @@ export class PipelineStateStore {
 
   async updateRunStatus(
     runId: string,
-    status: 'running' | 'complete' | 'failed' | 'cancelled',
+    status: 'running' | 'complete' | 'failed' | 'cancelled' | 'resumable' | 'awaiting_approval',
     verdict?: 'PASS' | 'FAIL'
   ): Promise<void> {
     const completedAt = (status === 'complete' || status === 'failed' || status === 'cancelled')
       ? Date.now()
       : null;
-
-    const stmt = this.db.prepare(`
-      UPDATE pipeline_runs
-      SET status = ?, completed_at = ?, final_verdict = ?
-      WHERE id = ?
-    `);
-    stmt.run(status, completedAt, verdict || null, runId);
+    this.db.prepare(`UPDATE pipeline_runs SET status = ?, completed_at = ?, final_verdict = ? WHERE id = ?`)
+      .run(status, completedAt, verdict || null, runId);
   }
 
   async incrementRetryCount(runId: string): Promise<void> {
-    const stmt = this.db.prepare(`
-      UPDATE pipeline_runs SET retry_count = retry_count + 1 WHERE id = ?
-    `);
-    stmt.run(runId);
+    this.db.prepare(`UPDATE pipeline_runs SET retry_count = retry_count + 1 WHERE id = ?`).run(runId);
   }
 
-  async getRunHistory(): Promise<PipelineRun[]> {
+  // --- Checkpoint & Resume ---
+
+  async saveCheckpoint(runId: string, stage: string, context: PipelineContext): Promise<void> {
+    const snapshot = JSON.stringify({
+      taskDescription: context.taskDescription,
+      taskPlan: context.taskPlan,
+      codeOutput: context.codeOutput,
+      reviewResult: context.reviewResult,
+      securityResult: context.securityResult,
+      validationResult: context.validationResult,
+      researchResult: context.researchResult,
+      decompositionResult: context.decompositionResult,
+      retryCountByStage: context.retryCountByStage,
+      replanCount: context.replanCount,
+      template: context.template,
+      stageNotes: context.stageNotes,
+    });
+    this.db.prepare(`UPDATE pipeline_runs SET context_snapshot = ?, last_completed_stage = ? WHERE id = ?`)
+      .run(snapshot, stage, runId);
+  }
+
+  async loadCheckpoint(runId: string): Promise<{ context: PipelineContext; lastStage: string } | null> {
+    const run = this.db.prepare('SELECT context_snapshot, last_completed_stage FROM pipeline_runs WHERE id = ?').get(runId) as any;
+    if (!run?.context_snapshot) return null;
+    try {
+      const parsed = JSON.parse(run.context_snapshot);
+      return {
+        context: {
+          ...parsed,
+          retryCountByStage: parsed.retryCountByStage || {},
+          replanCount: parsed.replanCount || 0,
+          template: parsed.template || 'standard',
+        },
+        lastStage: run.last_completed_stage,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async getResumableRuns(): Promise<PipelineRun[]> {
     const runs = this.db.prepare(`
-      SELECT * FROM pipeline_runs ORDER BY created_at DESC LIMIT 50
+      SELECT * FROM pipeline_runs
+      WHERE status IN ('running', 'resumable', 'awaiting_approval') AND context_snapshot IS NOT NULL AND last_completed_stage IS NOT NULL
+      ORDER BY created_at DESC
     `).all() as any[];
 
+    return runs.map((run: any) => this.mapRunRow(run));
+  }
+
+  async markResumable(runId: string): Promise<void> {
+    this.db.prepare(`UPDATE pipeline_runs SET status = 'resumable' WHERE id = ? AND status = 'running'`).run(runId);
+  }
+
+  // --- Child Runs (Decomposition) ---
+
+  async getChildRuns(parentRunId: string): Promise<PipelineRun[]> {
+    const runs = this.db.prepare(`
+      SELECT * FROM pipeline_runs WHERE parent_run_id = ? ORDER BY subtask_index ASC
+    `).all(parentRunId) as any[];
+
     const result: PipelineRun[] = [];
-
     for (const run of runs) {
-      const stageResults = this.db.prepare(`
-        SELECT * FROM pipeline_stage_results WHERE run_id = ? ORDER BY stage, attempt
-      `).all(run.id) as any[];
-
-      const stageOrder: PipelineStage[] = run.stage_order
-        ? JSON.parse(run.stage_order)
-        : ['plan', 'action', 'review', 'validate', 'execute'];
-
-      const stages: Record<string, StageResult<any>> = {};
-      for (const stage of stageOrder) {
-        stages[stage] = this.buildStageResult(stageResults, stage);
-      }
-
-      result.push({
-        id: run.id,
-        task_description: run.task_description,
-        project_root: run.project_root,
-        status: run.status,
-        created_at: run.created_at,
-        completed_at: run.completed_at,
-        retry_count: run.retry_count,
-        final_verdict: run.final_verdict,
-        template: run.template,
-        stage_order: stageOrder,
-        stages
-      });
+      result.push(await this.buildFullRun(run));
     }
-
     return result;
   }
 
-  private buildStageResult(results: any[], stage: string): StageResult<any> {
-    const stageResults = results.filter(r => r.stage === stage);
-    if (stageResults.length === 0) {
-      return { status: 'pending', model_used: '' };
+  // --- Read Methods ---
+
+  async getRunHistory(): Promise<PipelineRun[]> {
+    const runs = this.db.prepare(`
+      SELECT * FROM pipeline_runs WHERE parent_run_id IS NULL ORDER BY created_at DESC LIMIT 50
+    `).all() as any[];
+
+    const result: PipelineRun[] = [];
+    for (const run of runs) {
+      const fullRun = await this.buildFullRun(run);
+      const children = this.db.prepare(`SELECT * FROM pipeline_runs WHERE parent_run_id = ? ORDER BY subtask_index ASC`).all(run.id) as any[];
+      if (children.length > 0) {
+        fullRun.children = [];
+        for (const child of children) {
+          fullRun.children.push(await this.buildFullRun(child));
+        }
+      }
+      result.push(fullRun);
     }
-
-    const latest = stageResults[stageResults.length - 1];
-    let output: any;
-
-    try {
-      output = latest.output ? JSON.parse(latest.output) : undefined;
-    } catch {
-      output = undefined;
-    }
-
-    return {
-      status: latest.status,
-      model_used: latest.model_used,
-      duration_ms: latest.duration_ms,
-      output,
-      error: latest.error
-    };
+    return result;
   }
 
-  async getStageOutput(runId: string, stage: string): Promise<StageResult<any> | null> {
-    const results = this.db.prepare(`
-      SELECT * FROM pipeline_stage_results WHERE run_id = ? AND stage = ? ORDER BY attempt DESC LIMIT 1
-    `).all(runId, stage) as any[];
-
-    if (results.length === 0) return null;
-
-    const latest = results[0];
-    let output: any;
-
-    try {
-      output = latest.output ? JSON.parse(latest.output) : undefined;
-    } catch {
-      output = undefined;
-    }
-
-    return {
-      status: latest.status,
-      model_used: latest.model_used,
-      duration_ms: latest.duration_ms,
-      output,
-      error: latest.error
-    };
-  }
-
-  async finalizeRun(runId: string, verdict: 'PASS' | 'FAIL'): Promise<void> {
-    await this.updateRunStatus(runId, verdict === 'PASS' ? 'complete' : 'failed', verdict);
-  }
-
-  async deleteRun(runId: string): Promise<void> {
-    this.db.prepare('DELETE FROM pipeline_stage_results WHERE run_id = ?').run(runId);
-    this.db.prepare('DELETE FROM pipeline_analytics WHERE run_id = ?').run(runId);
-    this.db.prepare('DELETE FROM pipeline_stage_analytics WHERE run_id = ?').run(runId);
-    this.db.prepare('DELETE FROM pipeline_runs WHERE id = ?').run(runId);
-  }
-
-  async getRun(runId: string): Promise<PipelineRun | null> {
-    const runs = this.db.prepare('SELECT * FROM pipeline_runs WHERE id = ?').all(runId) as any[];
-    if (runs.length === 0) return null;
-
-    const run = runs[0];
-    const stageResults = this.db.prepare(`
-      SELECT * FROM pipeline_stage_results WHERE run_id = ? ORDER BY stage, attempt
-    `).all(runId) as any[];
-
-    const stageOrder: PipelineStage[] = run.stage_order
-      ? JSON.parse(run.stage_order)
-      : ['plan', 'action', 'review', 'validate', 'execute'];
-
+  private async buildFullRun(run: any): Promise<PipelineRun> {
+    const stageResults = this.db.prepare(`SELECT * FROM pipeline_stage_results WHERE run_id = ? ORDER BY stage, attempt`).all(run.id) as any[];
+    const stageOrder: PipelineStage[] = run.stage_order ? JSON.parse(run.stage_order) : ['plan', 'action', 'review', 'validate', 'execute'];
     const stages: Record<string, StageResult<any>> = {};
     for (const stage of stageOrder) {
       stages[stage] = this.buildStageResult(stageResults, stage);
     }
-
     return {
       id: run.id,
       task_description: run.task_description,
@@ -299,12 +278,89 @@ export class PipelineStateStore {
       final_verdict: run.final_verdict,
       template: run.template,
       stage_order: stageOrder,
-      stages
+      stages,
+      agent_id: run.agent_id,
+      parent_run_id: run.parent_run_id,
+      subtask_index: run.subtask_index,
+      last_completed_stage: run.last_completed_stage,
     };
   }
 
-  async prepareForRetry(runId: string): Promise<void> {
-    this.db.prepare('UPDATE pipeline_runs SET status = ?, retry_count = retry_count + 1 WHERE id = ?').run('running', runId);
+  private mapRunRow(run: any): PipelineRun {
+    const stageOrder: PipelineStage[] = run.stage_order ? JSON.parse(run.stage_order) : ['plan', 'action', 'review', 'validate', 'execute'];
+    return {
+      id: run.id,
+      task_description: run.task_description,
+      project_root: run.project_root,
+      status: run.status,
+      created_at: run.created_at,
+      completed_at: run.completed_at,
+      retry_count: run.retry_count,
+      final_verdict: run.final_verdict,
+      template: run.template,
+      stage_order: stageOrder,
+      stages: {},
+      agent_id: run.agent_id,
+      parent_run_id: run.parent_run_id,
+      subtask_index: run.subtask_index,
+      last_completed_stage: run.last_completed_stage,
+    };
+  }
+
+  private buildStageResult(results: any[], stage: string): StageResult<any> {
+    const stageResults = results.filter(r => r.stage === stage);
+    if (stageResults.length === 0) {
+      return { status: 'pending', model_used: '' };
+    }
+    const latest = stageResults[stageResults.length - 1];
+    let output: any;
+    try { output = latest.output ? JSON.parse(latest.output) : undefined; } catch { output = undefined; }
+    return { status: latest.status, model_used: latest.model_used, duration_ms: latest.duration_ms, output, error: latest.error };
+  }
+
+  async getStageOutput(runId: string, stage: string): Promise<StageResult<any> | null> {
+    const results = this.db.prepare(`SELECT * FROM pipeline_stage_results WHERE run_id = ? AND stage = ? ORDER BY attempt DESC LIMIT 1`).all(runId, stage) as any[];
+    if (results.length === 0) return null;
+    const latest = results[0];
+    let output: any;
+    try { output = latest.output ? JSON.parse(latest.output) : undefined; } catch { output = undefined; }
+    return { status: latest.status, model_used: latest.model_used, duration_ms: latest.duration_ms, output, error: latest.error };
+  }
+
+  async finalizeRun(runId: string, verdict: 'PASS' | 'FAIL'): Promise<void> {
+    await this.updateRunStatus(runId, verdict === 'PASS' ? 'complete' : 'failed', verdict);
+  }
+
+  async deleteRun(runId: string): Promise<void> {
+    this.db.prepare('DELETE FROM pipeline_stage_results WHERE run_id = ?').run(runId);
+    this.db.prepare('DELETE FROM pipeline_analytics WHERE run_id = ?').run(runId);
+    this.db.prepare('DELETE FROM pipeline_stage_analytics WHERE run_id = ?').run(runId);
+    this.db.prepare('DELETE FROM pipeline_stage_results WHERE run_id IN (SELECT id FROM pipeline_runs WHERE parent_run_id = ?)').run(runId);
+    this.db.prepare('DELETE FROM pipeline_runs WHERE parent_run_id = ?').run(runId);
+    this.db.prepare('DELETE FROM pipeline_runs WHERE id = ?').run(runId);
+  }
+
+  async getRun(runId: string): Promise<PipelineRun | null> {
+    const runs = this.db.prepare('SELECT * FROM pipeline_runs WHERE id = ?').all(runId) as any[];
+    if (runs.length === 0) return null;
+    return this.buildFullRun(runs[0]);
+  }
+
+  async prepareForRetry(runId: string, resetFromStage?: string): Promise<void> {
+    this.db.prepare('UPDATE pipeline_runs SET status = ?, retry_count = retry_count + 1, final_verdict = NULL, completed_at = NULL WHERE id = ?').run('running', runId);
+
+    const stageOrder: PipelineStage[] = (() => {
+      const run = this.db.prepare('SELECT stage_order FROM pipeline_runs WHERE id = ?').get(runId) as any;
+      return run?.stage_order ? JSON.parse(run.stage_order) : ['plan', 'action', 'review', 'validate', 'execute'];
+    })();
+
+    const startFrom = resetFromStage || 'action';
+    const startIdx = stageOrder.indexOf(startFrom as PipelineStage);
+    const stagesToReset = startIdx >= 0 ? stageOrder.slice(startIdx) : stageOrder;
+
+    for (const stage of stagesToReset) {
+      this.db.prepare('DELETE FROM pipeline_stage_results WHERE run_id = ? AND stage = ?').run(runId, stage);
+    }
   }
 
   // --- Analytics Methods ---
@@ -312,19 +368,12 @@ export class PipelineStateStore {
   getAnalyticsSummary(fromTimestamp?: number, toTimestamp?: number) {
     const from = fromTimestamp || 0;
     const to = toTimestamp || Date.now();
-
     const row = this.db.prepare(`
-      SELECT
-        COUNT(*) as total_runs,
-        SUM(CASE WHEN final_verdict = 'PASS' THEN 1 ELSE 0 END) as passed_runs,
-        AVG(total_duration_ms) as avg_duration_ms,
-        SUM(total_tokens) as total_tokens,
-        SUM(total_cost_usd) as total_cost_usd,
-        AVG(retry_count) as avg_retries
-      FROM pipeline_analytics
-      WHERE created_at BETWEEN ? AND ?
+      SELECT COUNT(*) as total_runs, SUM(CASE WHEN final_verdict = 'PASS' THEN 1 ELSE 0 END) as passed_runs,
+        AVG(total_duration_ms) as avg_duration_ms, SUM(total_tokens) as total_tokens,
+        SUM(total_cost_usd) as total_cost_usd, AVG(retry_count) as avg_retries
+      FROM pipeline_analytics WHERE created_at BETWEEN ? AND ?
     `).get(from, to) as any;
-
     return {
       totalRuns: row.total_runs || 0,
       successRate: row.total_runs > 0 ? Math.round((row.passed_runs / row.total_runs) * 100) : 0,
@@ -338,105 +387,60 @@ export class PipelineStateStore {
   getAnalyticsByTemplate(fromTimestamp?: number, toTimestamp?: number) {
     const from = fromTimestamp || 0;
     const to = toTimestamp || Date.now();
-
     return this.db.prepare(`
-      SELECT
-        template,
-        COUNT(*) as count,
-        SUM(CASE WHEN final_verdict = 'PASS' THEN 1 ELSE 0 END) as passed,
-        AVG(total_duration_ms) as avg_duration_ms,
-        AVG(total_cost_usd) as avg_cost_usd
-      FROM pipeline_analytics
-      WHERE created_at BETWEEN ? AND ? AND template IS NOT NULL
-      GROUP BY template
-      ORDER BY count DESC
+      SELECT template, COUNT(*) as count, SUM(CASE WHEN final_verdict = 'PASS' THEN 1 ELSE 0 END) as passed,
+        AVG(total_duration_ms) as avg_duration_ms, AVG(total_cost_usd) as avg_cost_usd
+      FROM pipeline_analytics WHERE created_at BETWEEN ? AND ? AND template IS NOT NULL GROUP BY template ORDER BY count DESC
     `).all(from, to) as any[];
   }
 
   getBottleneckStages(fromTimestamp?: number, toTimestamp?: number) {
     const from = fromTimestamp || 0;
     const to = toTimestamp || Date.now();
-
     return this.db.prepare(`
-      SELECT
-        stage,
-        COUNT(*) as executions,
-        AVG(duration_ms) as avg_duration_ms,
-        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failures,
-        AVG(cost_usd) as avg_cost_usd
-      FROM pipeline_stage_analytics
-      WHERE created_at BETWEEN ? AND ?
-      GROUP BY stage
-      ORDER BY avg_duration_ms DESC
+      SELECT stage, COUNT(*) as executions, AVG(duration_ms) as avg_duration_ms,
+        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failures, AVG(cost_usd) as avg_cost_usd
+      FROM pipeline_stage_analytics WHERE created_at BETWEEN ? AND ? GROUP BY stage ORDER BY avg_duration_ms DESC
     `).all(from, to) as any[];
   }
 
   getModelPerformance(fromTimestamp?: number, toTimestamp?: number) {
     const from = fromTimestamp || 0;
     const to = toTimestamp || Date.now();
-
     return this.db.prepare(`
-      SELECT
-        model,
-        COUNT(*) as executions,
-        SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) as successes,
-        AVG(duration_ms) as avg_duration_ms,
-        AVG(cost_usd) as avg_cost_usd
-      FROM pipeline_stage_analytics
-      WHERE created_at BETWEEN ? AND ? AND model IS NOT NULL AND model != 'local-execution'
-      GROUP BY model
-      ORDER BY executions DESC
+      SELECT model, COUNT(*) as executions, SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) as successes,
+        AVG(duration_ms) as avg_duration_ms, AVG(cost_usd) as avg_cost_usd
+      FROM pipeline_stage_analytics WHERE created_at BETWEEN ? AND ? AND model IS NOT NULL AND model != 'local-execution'
+      GROUP BY model ORDER BY executions DESC
     `).all(from, to) as any[];
   }
 
   recordAnalytics(runId: string, template?: string): void {
     const run = this.db.prepare('SELECT * FROM pipeline_runs WHERE id = ?').get(runId) as any;
     if (!run) return;
-
-    const stages = this.db.prepare(`
-      SELECT * FROM pipeline_stage_results WHERE run_id = ? ORDER BY attempt
-    `).all(runId) as any[];
-
+    const stages = this.db.prepare(`SELECT * FROM pipeline_stage_results WHERE run_id = ? ORDER BY attempt`).all(runId) as any[];
     const totalDuration = stages.reduce((sum: number, s: any) => sum + (s.duration_ms || 0), 0);
     const completedStages = stages.filter((s: any) => s.status === 'complete').length;
     const skippedStages = stages.filter((s: any) => s.status === 'skipped').length;
     const failedStages = stages.filter((s: any) => s.status === 'failed').length;
-
     const longestStage = stages.length > 0
-      ? stages.reduce((max: any, s: any) =>
-          (s.duration_ms || 0) > (max?.duration_ms || 0) ? s : max
-        , stages[0])
+      ? stages.reduce((max: any, s: any) => (s.duration_ms || 0) > (max?.duration_ms || 0) ? s : max, stages[0])
       : { stage: 'unknown', duration_ms: 0 };
-
     let totalTokens = 0;
     let totalCost = 0;
     try {
-      const usageRow = this.db.prepare(`
-        SELECT COALESCE(SUM(totalTokens), 0) as tokens, COALESCE(SUM(costUsd), 0) as cost
-        FROM token_usage WHERE conversationId = ?
-      `).get(`pipeline:${runId}`) as any;
-      if (usageRow) {
-        totalTokens = usageRow.tokens || 0;
-        totalCost = usageRow.cost || 0;
-      }
+      const usageRow = this.db.prepare(`SELECT COALESCE(SUM(totalTokens), 0) as tokens, COALESCE(SUM(costUsd), 0) as cost FROM token_usage WHERE conversationId = ?`).get(`pipeline:${runId}`) as any;
+      if (usageRow) { totalTokens = usageRow.tokens || 0; totalCost = usageRow.cost || 0; }
     } catch { /* token_usage table may not exist yet */ }
 
     this.db.prepare(`
-      INSERT INTO pipeline_analytics
-        (run_id, template, total_duration_ms, total_tokens, total_cost_usd, stages_completed, stages_skipped, stages_failed, retry_count, final_verdict, bottleneck_stage, created_at)
+      INSERT INTO pipeline_analytics (run_id, template, total_duration_ms, total_tokens, total_cost_usd, stages_completed, stages_skipped, stages_failed, retry_count, final_verdict, bottleneck_stage, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      runId, template || null, totalDuration, totalTokens, totalCost,
-      completedStages, skippedStages, failedStages,
-      run.retry_count, run.final_verdict, longestStage?.stage, run.created_at
-    );
+    `).run(runId, template || null, totalDuration, totalTokens, totalCost, completedStages, skippedStages, failedStages, run.retry_count, run.final_verdict, longestStage?.stage, run.created_at);
 
     for (const stage of stages) {
-      this.db.prepare(`
-        INSERT INTO pipeline_stage_analytics
-          (run_id, stage, duration_ms, model, status, attempt, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(runId, stage.stage, stage.duration_ms, stage.model_used, stage.status, stage.attempt, run.created_at);
+      this.db.prepare(`INSERT INTO pipeline_stage_analytics (run_id, stage, duration_ms, model, status, attempt, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(runId, stage.stage, stage.duration_ms, stage.model_used, stage.status, stage.attempt, run.created_at);
     }
   }
 }

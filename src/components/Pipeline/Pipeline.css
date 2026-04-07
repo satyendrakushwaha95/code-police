@@ -385,6 +385,24 @@
   color: white;
 }
 
+.status-badge.awaiting_approval {
+  background: var(--warning);
+  color: #000;
+  animation: pulse 2s infinite;
+}
+
+.approval-chat-hint {
+  font-size: 10px;
+  color: var(--warning);
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.status-badge.resumable {
+  background: var(--info);
+  color: white;
+}
+
 .duration {
   font-size: 12px;
   color: var(--text-muted);
@@ -1539,4 +1557,100 @@
   color: var(--text-muted);
   min-width: 60px;
   text-align: right;
+}
+
+/* ─── Agent Badge on Pipeline Items ──────────────────────────── */
+.pipeline-agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* ─── Child Runs Section ─────────────────────────────────────── */
+.child-runs-section {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+.child-runs-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 10px 0;
+}
+
+.child-run-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.child-run-row:last-child {
+  border-bottom: none;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-dot.running {
+  background: var(--accent);
+  animation: pulse 1.5s infinite;
+}
+
+.status-dot.complete {
+  background: var(--success);
+}
+
+.status-dot.failed {
+  background: var(--error);
+}
+
+.status-dot.cancelled {
+  background: var(--text-muted);
+}
+
+.status-dot.awaiting_approval {
+  background: var(--warning);
+  animation: pulse 1.5s infinite;
+}
+
+.child-run-desc {
+  flex: 1;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.child-run-agent {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--accent-glow);
+  border: 1px solid rgba(124, 106, 255, 0.2);
+  border-radius: 8px;
+  color: var(--accent);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.child-run-template {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }

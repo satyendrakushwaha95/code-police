@@ -1,22 +1,24 @@
 import { ipcRenderer, contextBridge } from 'electron';
 
-// Expose protected methods that allow the renderer process to use
-// the ipcRenderer without exposing the entire object
+const listenerMap = new Map<Function, Function>();
+
 contextBridge.exposeInMainWorld('ipcRenderer', {
-  on(...args: Parameters<typeof ipcRenderer.on>) {
-    const [channel, listener] = args;
-    return ipcRenderer.on(channel, (event, ...args) => listener(event, ...args));
+  on(channel: string, listener: (...args: any[]) => void) {
+    const wrapped = (_event: Electron.IpcRendererEvent, ...args: any[]) => listener(_event, ...args);
+    listenerMap.set(listener, wrapped);
+    ipcRenderer.on(channel, wrapped);
   },
-  off(...args: Parameters<typeof ipcRenderer.off>) {
-    const [channel, ...omit] = args;
-    return ipcRenderer.off(channel, ...omit);
+  off(channel: string, listener: (...args: any[]) => void) {
+    const wrapped = listenerMap.get(listener);
+    if (wrapped) {
+      ipcRenderer.off(channel, wrapped as any);
+      listenerMap.delete(listener);
+    }
   },
-  send(...args: Parameters<typeof ipcRenderer.send>) {
-    const [channel, ...omit] = args;
-    return ipcRenderer.send(channel, ...omit);
+  send(channel: string, ...args: any[]) {
+    ipcRenderer.send(channel, ...args);
   },
-  invoke(...args: Parameters<typeof ipcRenderer.invoke>) {
-    const [channel, ...omit] = args;
-    return ipcRenderer.invoke(channel, ...omit);
+  invoke(channel: string, ...args: any[]) {
+    return ipcRenderer.invoke(channel, ...args);
   },
 });

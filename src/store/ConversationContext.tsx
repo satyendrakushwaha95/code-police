@@ -15,7 +15,7 @@ type ConversationAction =
   | { type: 'RENAME_CONVERSATION'; payload: { id: string; title: string } }
   | { type: 'SET_ACTIVE'; payload: string | null }
   | { type: 'ADD_MESSAGE'; payload: { conversationId: string; message: Message } }
-  | { type: 'UPDATE_MESSAGE'; payload: { conversationId: string; messageId: string; content?: string; isStreaming?: boolean; pipelineStatus?: 'starting' | 'running' | 'complete' | 'failed' | 'cancelled'; pipelineRunId?: string; usage?: MessageUsage; suggestions?: string[] } }
+  | { type: 'UPDATE_MESSAGE'; payload: { conversationId: string; messageId: string; content?: string; isStreaming?: boolean; pipelineStatus?: 'starting' | 'running' | 'complete' | 'failed' | 'cancelled' | 'awaiting_approval'; pipelineRunId?: string; usage?: MessageUsage; suggestions?: string[] } }
   | { type: 'DELETE_MESSAGE'; payload: { conversationId: string; messageId: string } }
   | { type: 'ADD_ATTACHMENTS'; payload: { conversationId: string; attachments: FileAttachment[] } }
   | { type: 'REMOVE_ATTACHMENT'; payload: { conversationId: string; attachmentId: string } }

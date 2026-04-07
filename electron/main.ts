@@ -153,6 +153,28 @@ async function scanDirectory(dirPath: string, parentPath: string, depth = 0): Pr
 }
 
 // IPC Handlers for File System Access
+ipcMain.handle('fs:openPath', async (_, dirPath: string) => {
+  try {
+    const stat = await fs.stat(dirPath);
+    if (!stat.isDirectory()) return null;
+    const rootPath = dirPath;
+    const folderName = path.basename(rootPath);
+    const filesIndex = await scanDirectory(rootPath, folderName);
+    return { rootPath, folderName, filesIndex };
+  } catch {
+    return null;
+  }
+});
+
+ipcMain.handle('dialog:openDirectoryPath', async () => {
+  if (!win) return null;
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    properties: ['openDirectory']
+  });
+  if (canceled || filePaths.length === 0) return null;
+  return filePaths[0];
+});
+
 ipcMain.handle('dialog:openDirectory', async () => {
   if (!win) return null;
   const { canceled, filePaths } = await dialog.showOpenDialog(win, {
@@ -205,6 +227,16 @@ ipcMain.handle('fs:readFile', async (_, filePath: string) => {
   } catch (err) {
     console.error(`Failed to read file ${filePath}:`, err);
     throw err;
+  }
+});
+
+ipcMain.handle('fs:writeFile', async (_, { filePath, content }: { filePath: string; content: string }) => {
+  try {
+    await fs.writeFile(filePath, content, 'utf-8');
+    return { success: true };
+  } catch (err: any) {
+    console.error(`Failed to write file ${filePath}:`, err);
+    return { success: false, error: err.message };
   }
 });
 
@@ -462,6 +494,22 @@ ipcMain.handle('pipeline:getTemplates', async () => {
   return PIPELINE_TEMPLATES;
 });
 
+ipcMain.handle('pipeline:resume', async (_, { runId }: { runId: string }) => {
+  const stateStore = getPipelineStateStore();
+  const orchestrator = getPipelineOrchestrator(stateStore, vectorDB || undefined);
+  return orchestrator.resume(runId);
+});
+
+ipcMain.handle('pipeline:getResumable', async () => {
+  const stateStore = getPipelineStateStore();
+  return stateStore.getResumableRuns();
+});
+
+ipcMain.handle('pipeline:getChildRuns', async (_, { parentRunId }: { parentRunId: string }) => {
+  const stateStore = getPipelineStateStore();
+  return stateStore.getChildRuns(parentRunId);
+});
+
 ipcMain.handle('pipeline:run', async (_, payload: {
   task: string;
   options: PipelineOptions;
@@ -559,6 +607,18 @@ ipcMain.handle('pipeline:analyzeAndRetry', async (_, { runId, userPrompt }: { ru
   
   const result = await orchestrator.analyzeAndRetry(runId, userPrompt);
   return result;
+});
+
+ipcMain.handle('pipeline:approve', async (_, { runId }: { runId: string }) => {
+  const orchestrator = getPipelineOrchestrator();
+  await orchestrator.handleApproval(runId, 'approve');
+  return { ok: true };
+});
+
+ipcMain.handle('pipeline:reject', async (_, { runId }: { runId: string }) => {
+  const orchestrator = getPipelineOrchestrator();
+  await orchestrator.handleApproval(runId, 'reject');
+  return { ok: true };
 });
 
 // Routing Config IPC Handlers

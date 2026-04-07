@@ -12,13 +12,14 @@ const STAGE_LABELS: Record<string, string> = {
   plan: 'Plan', action: 'Action', review: 'Review',
   validate: 'Validate', execute: 'Execute',
   research: 'Research', security: 'Security',
+  decompose: 'Decompose',
 };
 
 function ExecutionSummary({ run }: { run: any }) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
-    if (run.status !== 'running') {
+    if (run.status !== 'running' && run.status !== 'awaiting_approval') {
       setElapsed((run.completed_at || Date.now()) - run.created_at);
       return;
     }
@@ -282,7 +283,8 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const isResizing = useRef(false);
 
-  const { cancel, activeRun, history, deleteRun, retryFix, analyzeAndRetry, refreshHistory } = usePipeline();
+  const { cancel, activeRun, history, deleteRun, retryFix, analyzeAndRetry, refreshHistory, getChildRuns } = usePipeline();
+  const [childRunsCache, setChildRunsCache] = useState<Record<string, any[]>>({});
 
   useEffect(() => {
     refreshHistory();
@@ -301,7 +303,7 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
     }
   }, [history]);
 
-  const toggleExpand = (runId: string) => {
+  const toggleExpand = async (runId: string) => {
     setExpandedItems(prev => {
       const next = new Set(prev);
       if (next.has(runId)) {
@@ -311,6 +313,14 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
       }
       return next;
     });
+    if (!childRunsCache[runId]) {
+      try {
+        const children = await getChildRuns(runId);
+        if (children.length > 0) {
+          setChildRunsCache(prev => ({ ...prev, [runId]: children }));
+        }
+      } catch { /* no children */ }
+    }
   };
 
   const startResize = useCallback((e: React.MouseEvent) => {
@@ -370,6 +380,19 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
     }
   };
 
+  const handleStopAndApply = async (run: any) => {
+    await cancel(run.id);
+    showToast('Pipeline stopped. Applying generated files...', 'info');
+    const { applied, failed } = await applyFileChanges(run);
+    if (failed > 0) {
+      showToast(`Applied ${applied} file(s), ${failed} failed`, 'error');
+    } else if (applied > 0) {
+      showToast(`Applied ${applied} file(s) successfully`, 'success');
+    } else {
+      showToast('No files generated yet to apply', 'info');
+    }
+  };
+
   const handleStopWithPrompt = async () => {
     if (!stopModalData || !stopPrompt.trim()) return;
 
@@ -405,29 +428,38 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
     }
   };
 
-  const handleApplyChanges = async (run: any) => {
-    if (!run?.stages?.action?.output) return;
+  const applyFileChanges = async (run: any) => {
+    const codeOutput = run?.stages?.action?.output;
+    if (!codeOutput?.file_changes?.length) return { applied: 0, failed: 0 };
 
-    const codeOutput = run.stages.action.output;
+    const projectRoot = run.project_root || '';
+    let applied = 0;
+    let failed = 0;
 
     for (const change of codeOutput.file_changes) {
       try {
-        const confirmed = await (window as any).ipcRenderer.invoke('dialog:confirmAction', {
-          title: 'Apply Change',
-          message: `Apply changes to ${change.file_path}?`,
-          detail: change.explanation
+        await (window as any).ipcRenderer.invoke('tools:execute', 'write_file', {
+          path: change.file_path,
+          content: change.content,
+          project_root: projectRoot,
         });
-
-        if (confirmed) {
-          await (window as any).ipcRenderer.invoke('tools:execute', 'write_file', {
-            file_path: change.file_path,
-            content: change.content
-          });
-          showToast(`Applied: ${change.file_path}`, 'success');
-        }
+        applied++;
       } catch (err) {
-        showToast(`Failed to apply ${change.file_path}: ${err}`, 'error');
+        failed++;
+        console.error(`Failed to apply ${change.file_path}:`, err);
       }
+    }
+    return { applied, failed };
+  };
+
+  const handleApplyChanges = async (run: any) => {
+    const { applied, failed } = await applyFileChanges(run);
+    if (failed > 0) {
+      showToast(`Applied ${applied} file(s), ${failed} failed`, 'error');
+    } else if (applied > 0) {
+      showToast(`Applied ${applied} file(s) successfully`, 'success');
+    } else {
+      showToast('No files to apply', 'info');
     }
   };
 
@@ -469,7 +501,7 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
   };
 
   const renderPipelineItem = (run: any) => {
-    const isActive = run.status === 'running';
+    const isActive = run.status === 'running' || run.status === 'awaiting_approval';
     const isExpanded = expandedItems.has(run.id);
     const isFailed = run.status === 'failed' || run.final_verdict === 'FAIL';
     const stageOrder: string[] = run.stage_order || ['plan', 'action', 'review', 'validate', 'execute'];
@@ -493,13 +525,23 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
           onClick={() => toggleExpand(run.id)}
         >
           <div className="pipeline-item-info">
-            <span className={`status-badge ${run.status}`}>{run.status}</span>
+            <span className={`status-badge ${run.status}`}>
+              {run.status === 'awaiting_approval' ? 'awaiting approval' : run.status}
+            </span>
+            {run.status === 'awaiting_approval' && (
+              <span className="approval-chat-hint">check chat to approve</span>
+            )}
             {run.template && run.template !== 'standard' && (
               <span className="template-pill">{run.template}</span>
             )}
             <span className="pipeline-task">{run.task_description.slice(0, 60)}{run.task_description.length > 60 ? '...' : ''}</span>
           </div>
           <div className="pipeline-item-meta">
+            {run.agent_id && (
+              <span className="pipeline-agent-badge" title={`Agent: ${run.agent_id}`}>
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              </span>
+            )}
             <span className="pipeline-id">{run.id.slice(0, 8)}</span>
             <span className="pipeline-progress">{progress.completed}/{progress.total}</span>
             {isFailed && (
@@ -527,26 +569,41 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
               {stageOrder.map((stage: string) => {
                 const stageResult = run.stages?.[stage];
                 if (!stageResult || (stageResult.status === 'pending' && !isActive)) return null;
-                return <StageCard key={stage} stage={stage} result={stageResult} attempt={stage === 'action' || stage === 'review' ? run.retry_count + 1 : undefined} />;
+                return <StageCard key={stage} stage={stage} result={stageResult} attempt={stage === 'action' || stage === 'review' ? run.retry_count + 1 : undefined} runId={run.id} />;
               })}
             </div>
 
             <div className="pipeline-item-footer">
-              {run.status === 'complete' && run.final_verdict === 'PASS' && (
+              {run.stages?.action?.output?.file_changes?.length > 0 && (run.status === 'complete' || run.status === 'failed') && (
                 <button
-                  className="btn btn-success btn-sm"
+                  className={`btn ${run.final_verdict === 'PASS' ? 'btn-success' : 'btn-primary'} btn-sm`}
                   onClick={(e) => { e.stopPropagation(); handleApplyChanges(run); }}
                 >
-                  Apply Changes
+                  {run.final_verdict === 'PASS' ? 'Apply Changes' : 'Force Apply Changes'}
                 </button>
               )}
 
-              {run.status === 'complete' && run.final_verdict && (
+              {(run.status === 'complete' || run.status === 'failed') && run.final_verdict && (
                 <div className={`final-verdict ${run.final_verdict?.toLowerCase()}`}>
                   Final Verdict: {run.final_verdict}
                 </div>
               )}
             </div>
+
+            {childRunsCache[run.id] && childRunsCache[run.id].length > 0 && (
+              <div className="child-runs-section">
+                <h4 className="child-runs-title">Subtask Runs ({childRunsCache[run.id].length})</h4>
+                {childRunsCache[run.id].map((child: any) => (
+                  <div key={child.id} className="child-run-row">
+                    <span className={`status-dot ${child.status}`} />
+                    <span className="child-run-desc">{child.task_description.slice(0, 60)}{child.task_description.length > 60 ? '...' : ''}</span>
+                    {child.agent_id && <span className="child-run-agent">{child.agent_id.slice(0, 12)}</span>}
+                    {child.template && <span className="child-run-template">{child.template}</span>}
+                    <span className={`status-badge ${child.status}`}>{child.final_verdict || child.status}</span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {(run.status === 'failed' || run.final_verdict === 'FAIL') && (
               <div className="retry-section">
@@ -583,12 +640,22 @@ export default function PipelinePanel({ onClose }: PipelinePanelProps) {
 
             <div className="pipeline-item-actions">
               {isActive && (
-                <button
-                  className="btn btn-danger btn-sm"
-                  onClick={(e) => { e.stopPropagation(); handleCancel(run.id); }}
-                >
-                  Stop
-                </button>
+                <>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    onClick={(e) => { e.stopPropagation(); handleCancel(run.id); }}
+                  >
+                    Stop
+                  </button>
+                  {run.stages?.action?.output?.file_changes?.length > 0 && (
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={(e) => { e.stopPropagation(); handleStopAndApply(run); }}
+                    >
+                      Stop &amp; Apply
+                    </button>
+                  )}
+                </>
               )}
               <button
                 className="btn btn-secondary btn-sm"

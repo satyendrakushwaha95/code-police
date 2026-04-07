@@ -9,10 +9,8 @@ import { ollamaService } from '../../services/ollama';
 import type { WorkspaceFile } from '../../store/WorkspaceContext';
 import './Chat.css';
 
-export type PipelineTemplateId = 'quick-fix' | 'standard' | 'deep-review' | 'docs-only' | 'refactor';
-
 interface ChatInputProps {
-  onSend: (message: string, attachments: FileAttachment[], runAsPipeline?: boolean, agentId?: string, template?: PipelineTemplateId) => void;
+  onSend: (message: string, attachments: FileAttachment[], runAsPipeline?: boolean, agentId?: string) => void;
   onStop: () => void;
   isStreaming: boolean;
   disabled: boolean;
@@ -45,7 +43,6 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
   const [isDragOver, setIsDragOver] = useState(false);
   const [inputMode, setInputMode] = useState<'chat' | 'agent'>('chat');
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [selectedTemplate, setSelectedTemplate] = useState<PipelineTemplateId>('standard');
   const { settings } = useSettings();
   const { state: workspace } = useWorkspace();
   const { state: agentState } = useAgents();
@@ -53,7 +50,6 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionIndex, setMentionIndex] = useState(0);
   const [mentionStart, setMentionStart] = useState<number | null>(null);
-  const [showWorkspaceHint, setShowWorkspaceHint] = useState(false);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashQuery, setSlashQuery] = useState('');
   const [slashIndex, setSlashIndex] = useState(0);
@@ -86,20 +82,6 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
   }, [showModelPicker]);
 
   useEffect(() => {
-    if (!showWorkspaceHint) return;
-    
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest('.send-to-agent-wrapper')) {
-        setShowWorkspaceHint(false);
-      }
-    };
-    
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, [showWorkspaceHint]);
-
-  useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = '24px';
     }
@@ -124,8 +106,7 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
     if ((!input.trim() && attachments.length === 0) || disabled) return;
     const isAgent = inputMode === 'agent';
     const agentId = isAgent ? selectedAgentId || undefined : undefined;
-    const template = isAgent ? selectedTemplate : undefined;
-    onSend(input.trim(), attachments, isAgent, agentId, template);
+    onSend(input.trim(), attachments, isAgent, agentId);
     setInput('');
     setAttachments([]);
     setInputMode('chat');
@@ -591,88 +572,31 @@ ${profilePrompt}`;
               Compare
             </button>
           )}
-          <div className="send-to-agent-wrapper">
-            <button
-              className={`mode-btn ${inputMode === 'agent' ? 'active' : ''} ${!workspace.rootPath ? 'no-workspace' : ''}`}
-              onClick={() => setInputMode('agent')}
-              disabled={isStreaming}
-            >
-              Send to Agent {!workspace.rootPath && (
-                <span
-                  className="mode-warning"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowWorkspaceHint(!showWorkspaceHint);
-                  }}
-                >
-                  ⚠
-                </span>
-              )}
-            </button>
-            {showWorkspaceHint && !workspace.rootPath && (
-              <div className="workspace-hint-tooltip">
-                <div className="workspace-hint-content">
-                  <p className="workspace-hint-title">Open a project folder first</p>
-                  <p className="workspace-hint-text">
-                    To use "Send to Agent", you need to open a project directory.
-                  </p>
-                  <div className="workspace-hint-steps">
-                    <div className="workspace-hint-step">
-                      <span className="step-number">1</span>
-                      <span>Click the <strong>File Explorer</strong> icon in the sidebar</span>
-                    </div>
-                    <div className="workspace-hint-step">
-                      <span className="step-number">2</span>
-                      <span>Select your project folder</span>
-                    </div>
-                  </div>
-                  <button
-                    className="workspace-hint-close"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setShowWorkspaceHint(false);
-                    }}
-                  >
-                    Got it
-                  </button>
-                </div>
-                <div className="workspace-hint-arrow" />
-              </div>
-            )}
-          </div>
+          <button
+            className={`mode-btn ${inputMode === 'agent' ? 'active' : ''}`}
+            onClick={() => setInputMode('agent')}
+            disabled={isStreaming}
+          >
+            Send to Agent
+          </button>
           {inputMode === 'agent' && (
-            <>
-              <select
-                className="agent-selector"
-                value={selectedAgentId || ''}
-                onChange={(e) => setSelectedAgentId(e.target.value || null)}
-                disabled={isStreaming}
-                title={!workspace.rootPath ? 'Open a workspace folder first to use agents' : ''}
-              >
-                {agentState.agents.length === 0 ? (
-                  <option value="">No agents available</option>
-                ) : (
-                  agentState.agents.map(agent => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.icon} {agent.name}
-                    </option>
-                  ))
-                )}
-              </select>
-              <select
-                className="template-selector"
-                value={selectedTemplate}
-                onChange={(e) => setSelectedTemplate(e.target.value as PipelineTemplateId)}
-                disabled={isStreaming}
-                title="Pipeline template"
-              >
-                <option value="standard">🔄 Standard</option>
-                <option value="quick-fix">⚡ Quick Fix</option>
-                <option value="deep-review">🔍 Deep Review</option>
-                <option value="docs-only">📝 Docs Only</option>
-                <option value="refactor">🔧 Refactor</option>
-              </select>
-            </>
+            <select
+              className="agent-selector"
+              value={selectedAgentId || ''}
+              onChange={(e) => setSelectedAgentId(e.target.value || null)}
+              disabled={isStreaming}
+              title={!workspace.rootPath ? 'Open a workspace folder first to use agents' : ''}
+            >
+              {agentState.agents.length === 0 ? (
+                <option value="">No agents available</option>
+              ) : (
+                agentState.agents.map(agent => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.icon} {agent.name}
+                  </option>
+                ))
+              )}
+            </select>
           )}
         </div>
       </div>

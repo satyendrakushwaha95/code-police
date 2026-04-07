@@ -1,7 +1,7 @@
 import { OllamaChatMessage } from '../embeddings';
 import { getSharedOllama } from '../shared-ollama';
 import { RoutingDecision } from '../model-router';
-import { CodeOutput, TaskPlan, SecurityResult } from '../pipeline-types';
+import { CodeOutput, TaskPlan, SecurityResult, StreamCallback } from '../pipeline-types';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -31,7 +31,8 @@ export class SecurityAgent {
     codeOutput: CodeOutput,
     taskPlan: TaskPlan,
     projectRoot: string,
-    modelDecision: RoutingDecision
+    modelDecision: RoutingDecision,
+    onChunk?: StreamCallback
   ): Promise<SecurityResult> {
     const vulnerabilities: SecurityResult['vulnerabilities'] = [];
     const dependencyIssues: SecurityResult['dependency_issues'] = [];

@@ -225,6 +225,40 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
             </div>
 
             <div className="settings-section">
+              <h3 className="section-title">Default Workspace</h3>
+              <div className="form-group">
+                <label>Default Project Directory</label>
+                <p className="form-hint">Set a default workspace so "Send to Agent" works without manually opening a folder each time.</p>
+                <div className="endpoint-row">
+                  <input
+                    type="text"
+                    value={settings.defaultWorkspacePath || ''}
+                    onChange={(e) => updateSettings({ defaultWorkspacePath: e.target.value })}
+                    placeholder="e.g., D:\Projects\my-app"
+                  />
+                  <button
+                    className="btn btn-secondary"
+                    onClick={async () => {
+                      try {
+                        const result = await (window as any).ipcRenderer?.invoke('dialog:openDirectoryPath');
+                        if (result) {
+                          updateSettings({ defaultWorkspacePath: result });
+                        }
+                      } catch {
+                        const result = await (window as any).ipcRenderer?.invoke('dialog:openDirectory');
+                        if (result?.rootPath) {
+                          updateSettings({ defaultWorkspacePath: result.rootPath });
+                        }
+                      }
+                    }}
+                  >
+                    Browse
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="settings-section">
               <h3 className="section-title">System Prompt</h3>
               <div className="form-group">
                 <textarea

@@ -901,16 +901,58 @@ Partial<RoutingConfig>
 
 #### `fs:readFile`
 
-Read file contents.
+Read file contents (UTF-8).
 
 **Request:**
 ```typescript
-string  // File path
+string  // Absolute file path
 ```
 
 **Response:**
 ```typescript
 string  // File content
+```
+
+#### `fs:writeFile`
+
+Write content to a file on disk (UTF-8). Used by the file panel's direct save and dirty confirmation save.
+
+**Request:**
+```typescript
+{
+  filePath: string;  // Absolute file path
+  content: string;   // File content to write
+}
+```
+
+**Response:**
+```typescript
+{
+  success: boolean;
+  error?: string;  // Present only when success is false
+}
+```
+
+#### `fs:openPath`
+
+Open a directory path and return its file index. Also used internally by `WorkspaceContext.refreshFilesIndex()` to re-scan the workspace after pipeline completion.
+
+**Request:**
+```typescript
+string  // Absolute directory path
+```
+
+**Response:**
+```typescript
+{
+  rootPath: string;
+  folderName: string;
+  filesIndex: Array<{
+    name: string;
+    path: string;          // Relative path (e.g., "my-app/src/App.tsx")
+    absolutePath: string;  // Full disk path
+  }>;
+} | null  // null if path is not a directory
 ```
 
 #### `tools:execute`

@@ -79,6 +79,19 @@ export interface SecurityResult {
   score: number;
 }
 
+export interface DecompositionResult {
+  subtasks: Array<{
+    id: string;
+    description: string;
+    template: PipelineTemplate;
+    estimated_complexity: 'low' | 'medium' | 'high';
+    dependencies: string[];
+    agentId?: string;
+    agentReason?: string;
+  }>;
+  strategy: string;
+}
+
 export type StageStatus = 'pending' | 'running' | 'complete' | 'failed' | 'skipped';
 
 export interface StageResult<T> {
@@ -90,14 +103,15 @@ export interface StageResult<T> {
   real_time?: RealTimeProgress;
 }
 
-export type PipelineStage = 'plan' | 'action' | 'review' | 'validate' | 'execute' | 'research' | 'security';
+export type PipelineStage = 'plan' | 'action' | 'review' | 'validate' | 'execute' | 'research' | 'security' | 'decompose';
 
 export type PipelineTemplate =
   | 'quick-fix'
   | 'standard'
   | 'deep-review'
   | 'docs-only'
-  | 'refactor';
+  | 'refactor'
+  | 'complex';
 
 export interface PipelineTemplateConfig {
   id: PipelineTemplate;
@@ -111,7 +125,7 @@ export interface PipelineRun {
   id: string;
   task_description: string;
   project_root?: string;
-  status: 'running' | 'complete' | 'failed' | 'cancelled';
+  status: 'running' | 'complete' | 'failed' | 'cancelled' | 'resumable' | 'awaiting_approval';
   created_at: number;
   completed_at?: number;
   retry_count: number;
@@ -120,6 +134,19 @@ export interface PipelineRun {
   template?: PipelineTemplate;
   stage_order: PipelineStage[];
   stages: Record<string, StageResult<any>>;
+  parent_run_id?: string;
+  subtask_index?: number;
+  agent_id?: string;
+  last_completed_stage?: string;
+  children?: PipelineRun[];
+}
+
+export interface ApprovalRequest {
+  runId: string;
+  stage: string;
+  stageResult: any;
+  message: string;
+  options: ('approve' | 'reject')[];
 }
 
 export interface PipelineOptions {
@@ -127,6 +154,9 @@ export interface PipelineOptions {
   timeoutMs: number;
   autoExecute: boolean;
   smartSkip?: boolean;
+  enableAgentLoop?: boolean;
+  maxToolIterations?: number;
+  approvalStages?: PipelineStage[];
 }
 
 export type RealTimeStatus = 'idle' | 'sending' | 'processing' | 'waiting' | 'complete' | 'failed';
@@ -146,3 +176,24 @@ export interface RealTimeProgress {
   input_preview?: string;
   output_preview?: string;
 }
+
+export interface StageStreamChunk {
+  runId: string;
+  stage: string;
+  content: string;
+  accumulated: string;
+  done: boolean;
+}
+
+export interface ToolCall {
+  tool: string;
+  params: Record<string, any>;
+}
+
+export interface ToolResult {
+  tool: string;
+  output: string;
+  success: boolean;
+}
+
+export type StreamCallback = (content: string, accumulated: string) => void;

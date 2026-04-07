@@ -47,7 +47,7 @@ npm run dist:win
 - `Usage/` - Usage & cost dashboard (UsageDashboard)
 - `CommandPalette/` - Global command palette (CommandPalette)
 - `Pipeline/` - Pipeline dashboard
-- `FilePanel/` - File explorer
+- `FilePanel/` - Monaco-powered file editor with direct save, dirty confirmation, pipeline auto-refresh, session persistence
 - `Terminal/` - Terminal emulator
 - `Settings/` - Settings modal, routing, provider management (ProviderSettingsPanel), profile & memory (ProfileSettingsPanel)
 - `Sidebar/` - Navigation sidebar with window controls
@@ -58,6 +58,7 @@ npm run dist:win
 - `usePipeline.ts` - Pipeline state and operations
 - `useModelRouter.ts` - Model routing with provider awareness
 - `useCompare.ts` - Multi-model comparison session management
+- `useEditorState.ts` - Editor session persistence (open tabs, expanded folders via localStorage)
 - `useToast.ts` - Toast notifications
 - `useKeyboardShortcuts.ts` - Keyboard bindings
 
@@ -71,7 +72,7 @@ npm run dist:win
 **Stores** (`src/store/`)
 - `ConversationContext.tsx` - Chat state (includes usage per message)
 - `SettingsContext.tsx` - App settings (includes provider awareness)
-- `WorkspaceContext.tsx` - Workspace state
+- `WorkspaceContext.tsx` - Workspace state (root path, files index, `refreshFilesIndex()` for pipeline auto-refresh)
 - `AgentContext.tsx` - Custom agents state
 
 **Styles** (`src/index.css`)

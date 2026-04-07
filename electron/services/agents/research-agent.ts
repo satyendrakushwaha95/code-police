@@ -1,7 +1,7 @@
 import { OllamaChatMessage } from '../embeddings';
 import { getSharedOllama } from '../shared-ollama';
 import { RoutingDecision } from '../model-router';
-import { ResearchResult } from '../pipeline-types';
+import { ResearchResult, StreamCallback } from '../pipeline-types';
 import { analyzeProject, ProjectAnalysis } from '../project-analyzer';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -10,7 +10,8 @@ export class ResearchAgent {
   async execute(
     taskDescription: string,
     projectRoot: string,
-    modelDecision: RoutingDecision
+    modelDecision: RoutingDecision,
+    onChunk?: StreamCallback
   ): Promise<ResearchResult> {
     const analysis = await analyzeProject(projectRoot);
 
@@ -49,6 +50,7 @@ export class ResearchAgent {
       for await (const chunk of ollama.chat(model, messages)) {
         if (chunk.message?.content) {
           rawOutput += chunk.message.content;
+          onChunk?.(chunk.message.content, rawOutput);
         }
       }
     } catch (err) {

@@ -56,9 +56,13 @@ export interface AgentPipelineConfig {
     review: { enabled: boolean; model?: string };
     validate: { enabled: boolean; model?: string };
     execute: { enabled: boolean; model?: string };
+    [key: string]: { enabled: boolean; model?: string } | undefined;
   };
   maxRetries: number;
   timeoutMs: number;
+  template?: string;
+  enableAgentLoop?: boolean;
+  approvalStages?: string[];
 }
 
 export interface CreateAgentInput {
@@ -78,127 +82,8 @@ export interface CreateAgentInput {
 export type UpdateAgentInput = Partial<CreateAgentInput>;
 
 export const DEFAULT_AGENT_CONSTRAINTS: AgentConstraints = {
-  allowedFilePatterns: [
-    // Root-level and nested files (all file types)
-    '*', '**/*',
-
-    // ─── JavaScript / TypeScript ───────────────────────────────────
-    '*.ts', '*.tsx', '*.js', '*.jsx', '*.mjs', '*.cjs',
-    '*.d.ts', '*.d.mts',
-
-    // ─── Angular ──────────────────────────────────────────────────
-    '*.component.ts', '*.component.html', '*.component.css', '*.component.scss',
-    '*.module.ts', '*.service.ts', '*.directive.ts', '*.pipe.ts',
-    '*.guard.ts', '*.interceptor.ts', '*.resolver.ts',
-    '*.spec.ts', '*.test.ts',
-
-    // ─── Vue / Svelte ─────────────────────────────────────────────
-    '*.vue', '*.svelte',
-
-    // ─── Stylesheets ──────────────────────────────────────────────
-    '*.css', '*.scss', '*.sass', '*.less', '*.styl', '*.pcss',
-
-    // ─── HTML / Templates ─────────────────────────────────────────
-    '*.html', '*.htm', '*.pug', '*.ejs', '*.hbs', '*.handlebars',
-    '*.blade.php', '*.twig', '*.tpl',
-
-    // ─── PHP / Laravel ────────────────────────────────────────────
-    '*.php', '*.phtml', '*.php5', '*.php7', '*.php8',
-    'artisan', 'composer.json', 'composer.lock',
-    '.env.example', 'phpunit.xml', 'phpunit.xml.dist',
-    '*.phar',
-
-    // ─── Python ───────────────────────────────────────────────────
-    '*.py', '*.pyi', '*.pyx', '*.pxd',
-
-    // ─── Java / Kotlin / Groovy ───────────────────────────────────
-    '*.java', '*.kt', '*.kts', '*.groovy', '*.gradle',
-    'pom.xml', 'build.gradle', 'build.gradle.kts',
-    'settings.gradle', 'settings.gradle.kts',
-    'mvnw', 'mvnw.cmd', 'gradlew', 'gradlew.bat',
-    '.mvn/**', 'gradle/**',
-
-    // ─── Go ───────────────────────────────────────────────────────
-    '*.go', 'go.mod', 'go.sum', 'go.work',
-
-    // ─── Rust ─────────────────────────────────────────────────────
-    '*.rs', 'Cargo.toml', 'Cargo.lock',
-
-    // ─── Ruby ─────────────────────────────────────────────────────
-    '*.rb', '*.rake', 'Gemfile', 'Gemfile.lock', 'Rakefile',
-    '*.erb',
-
-    // ─── C / C++ / C# ────────────────────────────────────────────
-    '*.c', '*.cpp', '*.cc', '*.cxx', '*.h', '*.hpp', '*.hxx',
-    '*.cs', '*.csproj', '*.sln',
-
-    // ─── Swift / Objective-C ──────────────────────────────────────
-    '*.swift', '*.m', '*.mm', '*.xib', '*.storyboard',
-    '*.pbxproj', '*.xcworkspacedata',
-
-    // ─── Dart / Flutter ──────────────────────────────────────────
-    '*.dart', 'pubspec.yaml', 'pubspec.lock',
-
-    // ─── Shell / Scripts ──────────────────────────────────────────
-    '*.sh', '*.bash', '*.zsh', '*.fish', '*.ps1', '*.bat', '*.cmd',
-    'Makefile', 'Dockerfile', 'docker-compose*.yml', '.dockerignore',
-
-    // ─── Config & Data ────────────────────────────────────────────
-    '*.json', '*.jsonc', '*.json5',
-    '*.yaml', '*.yml', '*.toml', '*.ini', '*.cfg', '*.conf',
-    '*.properties', '*.env*', '.editorconfig', '.prettierrc*',
-    '.eslintrc*', '.babelrc*', 'tsconfig*.json', 'jsconfig*.json',
-    '.stylelintrc*', '.postcssrc*',
-
-    // ─── Node / Package managers ──────────────────────────────────
-    'package.json', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml',
-    '.npmrc', '.yarnrc', '.yarnrc.yml', 'bun.lockb',
-    '.nvmrc', '.node-version',
-
-    // ─── Testing ──────────────────────────────────────────────────
-    '*.test.ts', '*.test.tsx', '*.test.js', '*.test.jsx',
-    '*.spec.ts', '*.spec.tsx', '*.spec.js', '*.spec.jsx',
-    'jest.config.*', 'vitest.config.*', 'cypress.config.*',
-    'karma.conf.*', 'playwright.config.*',
-
-    // ─── Documentation ────────────────────────────────────────────
-    '*.md', '*.mdx', '*.txt', '*.rst', '*.adoc', '*.tex', '*.rtf',
-    'LICENSE', 'LICENSE.*', 'CHANGELOG*', 'README*',
-
-    // ─── Database & Query ─────────────────────────────────────────
-    '*.sql', '*.graphql', '*.gql', '*.prisma',
-    '*.migration.*', '*.seed.*',
-
-    // ─── SVG / Images (code) ──────────────────────────────────────
-    '*.svg', '*.ico',
-
-    // ─── XML ──────────────────────────────────────────────────────
-    '*.xml', '*.xsd', '*.xsl', '*.xslt', '*.plist',
-    'web.config', 'app.config',
-
-    // ─── Lock / Misc ──────────────────────────────────────────────
-    '*.lock',
-
-    // ─── Source control / CI ──────────────────────────────────────
-    '.gitignore', '.gitattributes',
-    '.github/**', '.gitlab-ci.yml', 'Jenkinsfile',
-    '.circleci/**',
-
-    // ─── Misc framework files ─────────────────────────────────────
-    'angular.json', 'nx.json', 'lerna.json', 'turbo.json',
-    'next.config.*', 'nuxt.config.*', 'vite.config.*',
-    'webpack.config.*', 'rollup.config.*', 'esbuild.*',
-    'tailwind.config.*', 'postcss.config.*',
-    'remix.config.*', 'astro.config.*',
-    'svelte.config.*', 'quasar.config.*',
-
-    // ─── Laravel specific ─────────────────────────────────────────
-    'routes/*.php', 'app/**/*.php', 'resources/**',
-    'database/**/*.php', 'config/*.php',
-    'storage/**', 'bootstrap/**',
-    'server.php', '.htaccess',
-  ],
-  blockedFilePatterns: ['*.env', 'node_modules/**', '.git/**', 'dist/**', 'build/**', '*.log'],
+  allowedFilePatterns: ['**/*'],
+  blockedFilePatterns: [],
   maxFileSize: 10485760,
   allowedLanguages: [
     'typescript', 'javascript', 'python', 'java', 'go', 'rust',
@@ -208,8 +93,8 @@ export const DEFAULT_AGENT_CONSTRAINTS: AgentConstraints = {
     'html', 'css', 'scss', 'less', 'sql', 'graphql', 'shell',
     'yaml', 'json', 'xml', 'markdown', 'vue', 'svelte',
   ],
-  requireApproval: true,
-  autoExecute: false,
+  requireApproval: false,
+  autoExecute: true,
 };
 
 export const DEFAULT_KNOWLEDGE_BASE: KnowledgeBaseConfig = {
@@ -292,12 +177,12 @@ When generating code:
       { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
-      allowedFilePatterns: ['*', '**/*', '*.html', '*.css', '*.scss', '*.sass', '*.ts', '*.tsx', '*.js', '*.jsx', '*.json', '*.md', '**/*.html', '**/*.css', '**/*.scss', '**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
-      blockedFilePatterns: ['*.env', 'node_modules/**', '.git/**', 'dist/**', 'build/**', '*.log'],
+      allowedFilePatterns: ['**/*'],
+      blockedFilePatterns: [],
       maxFileSize: 5242880,
       allowedLanguages: ['typescript', 'javascript', 'html', 'css'],
-      requireApproval: true,
-      autoExecute: false,
+      requireApproval: false,
+      autoExecute: true,
     },
   },
   {
@@ -330,12 +215,12 @@ When generating code:
       { toolId: 'execute_command', enabled: true },
     ],
     constraints: {
-      allowedFilePatterns: ['*', '**/*', '*.ts', '*.js', '*.py', '*.go', '*.rs', '*.java', '*.cs', '*.sql', '*.yaml', '*.yml', '*.json', '*.md', '**/*.ts', '**/*.js', '**/*.py', '**/*.go'],
-      blockedFilePatterns: ['*.env', 'node_modules/**', '.git/**', 'dist/**', 'build/**', '*.log', 'secrets/**'],
+      allowedFilePatterns: ['**/*'],
+      blockedFilePatterns: [],
       maxFileSize: 10485760,
       allowedLanguages: ['typescript', 'javascript', 'python', 'go', 'rust', 'java', 'csharp'],
-      requireApproval: true,
-      autoExecute: false,
+      requireApproval: false,
+      autoExecute: true,
     },
   },
   {
@@ -366,12 +251,12 @@ When reviewing code:
       { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
-      allowedFilePatterns: ['*', '**/*', '*.ts', '*.tsx', '*.js', '*.jsx', '*.py', '*.go', '*.rs', '*.java', '*.cs', '*.md', '**/*.ts', '**/*.js', '**/*.py'],
-      blockedFilePatterns: ['*.env', 'node_modules/**', '.git/**', 'dist/**', 'build/**'],
+      allowedFilePatterns: ['**/*'],
+      blockedFilePatterns: [],
       maxFileSize: 5242880,
       allowedLanguages: ['typescript', 'javascript', 'python', 'go', 'rust', 'java', 'csharp'],
       requireApproval: false,
-      autoExecute: false,
+      autoExecute: true,
     },
   },
   {
@@ -402,12 +287,12 @@ When auditing code:
       { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
-      allowedFilePatterns: ['*', '**/*', '*.ts', '*.tsx', '*.js', '*.jsx', '*.py', '*.go', '*.java', '*.cs', '*.md', '**/*.ts', '**/*.js', '**/*.py'],
-      blockedFilePatterns: ['*.env', 'node_modules/**', '.git/**', 'dist/**', 'build/**', '*.log', 'secrets/**'],
+      allowedFilePatterns: ['**/*'],
+      blockedFilePatterns: [],
       maxFileSize: 5242880,
       allowedLanguages: ['typescript', 'javascript', 'python', 'go', 'java', 'csharp'],
       requireApproval: false,
-      autoExecute: false,
+      autoExecute: true,
     },
   },
   {
@@ -439,12 +324,12 @@ When generating configurations:
       { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
-      allowedFilePatterns: ['*', '**/*', 'Dockerfile', 'docker-compose*.yml', '*.yaml', '*.yml', '*.json', '*.tf', '*.sh', '*.bash', 'Makefile', 'Jenkinsfile', '*.md', '**/Dockerfile', '**/*.yaml', '**/*.yml'],
-      blockedFilePatterns: ['*.env', 'node_modules/**', '.git/**', 'secrets/**'],
+      allowedFilePatterns: ['**/*'],
+      blockedFilePatterns: [],
       maxFileSize: 10485760,
       allowedLanguages: ['yaml', 'json', 'hcl', 'bash', 'shell'],
-      requireApproval: true,
-      autoExecute: false,
+      requireApproval: false,
+      autoExecute: true,
     },
   },
   {
@@ -476,12 +361,12 @@ When generating code:
       { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
-      allowedFilePatterns: ['*', '**/*', '*.py', '*.sql', '*.yaml', '*.yml', '*.json', '*.scala', '*.java', '*.md', '**/*.py', '**/*.sql', '**/*.yaml'],
-      blockedFilePatterns: ['*.env', 'node_modules/**', '.git/**', 'dist/**', 'build/**', '*.log'],
+      allowedFilePatterns: ['**/*'],
+      blockedFilePatterns: [],
       maxFileSize: 20971520,
       allowedLanguages: ['python', 'sql', 'scala', 'java'],
-      requireApproval: true,
-      autoExecute: false,
+      requireApproval: false,
+      autoExecute: true,
     },
   },
   {
@@ -513,12 +398,12 @@ When writing documentation:
       { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
-      allowedFilePatterns: ['*', '**/*', '*.md', '*.txt', '*.rst', '*.html', '*.tex', '**/*.md'],
-      blockedFilePatterns: ['*.env', 'node_modules/**', '.git/**', 'dist/**', 'build/**'],
+      allowedFilePatterns: ['**/*'],
+      blockedFilePatterns: [],
       maxFileSize: 10485760,
       allowedLanguages: ['markdown', 'plaintext'],
-      requireApproval: true,
-      autoExecute: false,
+      requireApproval: false,
+      autoExecute: true,
     },
   },
   {
@@ -550,12 +435,12 @@ When helping:
       { toolId: 'grep_search', enabled: true },
     ],
     constraints: {
-      allowedFilePatterns: ['*'],
-      blockedFilePatterns: ['*.env', 'node_modules/**', '.git/**', 'dist/**', 'build/**', '*.log'],
+      allowedFilePatterns: ['**/*'],
+      blockedFilePatterns: [],
       maxFileSize: 10485760,
       allowedLanguages: ['typescript', 'javascript', 'python', 'go', 'rust', 'java', 'csharp', 'ruby', 'php'],
-      requireApproval: true,
-      autoExecute: false,
+      requireApproval: false,
+      autoExecute: true,
     },
   },
 ];

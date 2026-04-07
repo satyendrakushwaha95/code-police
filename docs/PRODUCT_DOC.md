@@ -261,18 +261,38 @@ Improve prompts using customizable personas.
 - Custom persona creation
 - Insert enhanced prompts to chat
 
-### 8. File Explorer
+### 8. File Explorer & Code Editor
 
-Browse and edit project files with a professional code editor experience.
+Browse, edit, and save project files with a Monaco-powered code editor.
 
-**Features:**
-- Directory tree navigation
-- File content viewer with line numbers
+**Code Editor:**
+- Monaco Editor with full syntax highlighting, line numbers, and theme support (dark/light)
+- Direct-to-disk save via `fs:writeFile` IPC — no download dialogs
+- `Ctrl+S` / `Cmd+S` keyboard shortcut to save the active file (works both inside Monaco and globally)
+- Dirty state tracking via content comparison with last-saved version (undo-aware — undoing all changes clears the dirty indicator)
+- Large file guards: files >100K chars show a "too large" placeholder; files 50K–100K use a plain textarea fallback
+
+**Tab Management:**
 - Multi-file tabs (open multiple files simultaneously)
-- Edit mode with monospace font styling
-- Add files as context to chat
-- Semantic code search (with indexing)
-- Resizable panel
+- Dirty indicator (`●` prefix) on modified tabs
+- Dirty confirmation bar when closing a modified tab — Save, Discard, or Cancel options
+- Save on confirmation writes to disk before closing; failed saves keep the tab open
+
+**Pipeline Integration:**
+- File tree auto-refreshes when a pipeline completes (listens for `pipeline:complete` event)
+- "Send to Agent" toolbar button pushes the active file's content into the chat context
+
+**Session Persistence:**
+- Open tabs and expanded folders persist to `localStorage` across app restarts
+- On launch, previously open files are re-read from disk; missing files are silently skipped
+- Expanded folder paths from a previous session that don't match the current workspace are harmlessly ignored
+
+**Explorer:**
+- Directory tree navigation with expand/collapse memory
+- Semantic code search with embedding-based indexing
+- Search results open as read-only chunks (cannot be saved to disk — prevents accidental overwrites)
+- "Use as Context" button to add files or search results to chat
+- Resizable panel (280–800px)
 
 ### 9. Terminal
 
@@ -823,6 +843,7 @@ Two collapsible sections in a single scrollable body:
 - `Ctrl+Shift+F` - Toggle file panel
 - `Ctrl+Shift+T` - Toggle terminal
 - `Ctrl+,` - Open settings
+- `Ctrl+S` - Save active file in editor (direct to disk)
 - `Ctrl+/` - Show shortcuts
 - `Ctrl+L` - Focus chat input
 - `/` - Open slash command autocomplete (when chat input is focused)

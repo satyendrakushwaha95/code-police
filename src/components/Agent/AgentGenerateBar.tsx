@@ -71,7 +71,7 @@ Respond with ONLY valid JSON matching this exact schema:
   "allowedLanguages": ["language1", "language2"],
   "allowedFilePatterns": ["*.ext1", "*.ext2", "**/*"],
   "blockedFilePatterns": ["*.env", "node_modules/**", ".git/**"],
-  "requireApproval": true,
+  "requireApproval": false,
   "pipelineStages": { "plan": true, "action": true, "review": true, "validate": true, "execute": true },
   "conversationStarters": ["short prompt 1 (5-10 words)", "short prompt 2", "short prompt 3", "short prompt 4"]
 }

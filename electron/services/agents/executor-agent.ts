@@ -11,6 +11,16 @@ const DANGEROUS_COMMANDS = [
   'taskkill /f', 'kill -9', 'pkill -f'
 ];
 
+function getAppSourceRoot(): string {
+  return path.normalize(process.env.APP_ROOT || path.join(__dirname, '..', '..'));
+}
+
+function isInsideAppSource(targetRoot: string): boolean {
+  const appRoot = getAppSourceRoot();
+  const normalizedTarget = path.normalize(targetRoot);
+  return normalizedTarget === appRoot || normalizedTarget.startsWith(appRoot + path.sep);
+}
+
 export class ExecutorAgent {
   private projectRoot: string = '';
   private auditDb: AgentMemoryService | null = null;
@@ -32,11 +42,32 @@ export class ExecutorAgent {
     const failedFiles: string[] = [];
     const commandResults: { command: string; output: string; success: boolean }[] = [];
 
+    const isSelfWorkspace = isInsideAppSource(root);
+    if (isSelfWorkspace) {
+      console.warn(`[ExecutorAgent] Workspace is the app's own source directory — all writes blocked to prevent self-modification`);
+    }
+
     for (const fileChange of codeOutput.file_changes) {
       try {
         const fullPath = path.isAbsolute(fileChange.file_path)
           ? fileChange.file_path
           : path.join(root, fileChange.file_path);
+
+        const relativePath = path.relative(root, fullPath);
+
+        if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+          console.warn(`[ExecutorAgent] Blocked path traversal: ${fileChange.file_path}`);
+          failedFiles.push(fileChange.file_path);
+          await this.logAudit('write_file', { path: fullPath, blocked: true }, false, 'Path traversal attempt');
+          continue;
+        }
+
+        if (isSelfWorkspace) {
+          console.warn(`[ExecutorAgent] Blocked write to app source: ${relativePath}`);
+          failedFiles.push(fileChange.file_path);
+          await this.logAudit('write_file', { path: fullPath, blocked: true }, false, 'Cannot write to app source directory');
+          continue;
+        }
 
         switch (fileChange.operation) {
           case 'create':

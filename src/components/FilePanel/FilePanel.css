@@ -574,74 +574,54 @@
   font-size: 13px;
 }
 
-/* File Editor with Line Numbers */
+/* File Editor (Monaco) */
 .file-editor {
   flex: 1;
   display: flex;
   overflow: hidden;
-  background: var(--bg-code);
   min-height: 0;
 }
 
-.editor-line-numbers {
+.file-editor .code-editor-container {
+  height: 100%;
+}
+
+/* Dirty Confirmation Bar */
+.dirty-confirm-bar {
   display: flex;
-  flex-direction: column;
-  padding: 16px 0;
-  background: var(--bg-tertiary);
-  border-right: 1px solid var(--border);
-  min-width: 48px;
-  user-select: none;
-  overflow: hidden;
-}
-
-.line-number {
-  padding: 0 12px;
-  font-family: var(--font-mono);
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--bg-warning, #2d2a1e);
+  border-bottom: 1px solid var(--border);
   font-size: 12px;
-  line-height: 1.6;
-  color: var(--text-tertiary);
-  text-align: right;
-}
-
-.editor-textarea {
-  flex: 1;
-  padding: 16px;
-  background: transparent;
   color: var(--text-primary);
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.dirty-confirm-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.dirty-confirm-actions .btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.dirty-confirm-actions .btn-danger {
+  background: var(--error);
+  color: white;
   border: none;
-  outline: none;
-  resize: none;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.6;
-  tab-size: 2;
-  overflow-y: auto;
 }
 
-.editor-textarea:focus {
-  box-shadow: none;
-}
-
-.editor-textarea::selection {
-  background: var(--accent-subtle);
-}
-
-/* Editor Scrollbar */
-.editor-textarea::-webkit-scrollbar {
-  width: 8px;
-}
-
-.editor-textarea::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.editor-textarea::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
-}
-
-.editor-textarea::-webkit-scrollbar-thumb:hover {
-  background: var(--text-tertiary);
+.dirty-confirm-actions .btn-danger:hover {
+  opacity: 0.9;
 }
 
 /* ═══════════════════════════════════

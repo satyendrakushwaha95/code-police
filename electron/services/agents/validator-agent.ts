@@ -1,7 +1,7 @@
 import { OllamaChatMessage } from '../embeddings';
 import { getSharedOllama } from '../shared-ollama';
 import { RoutingDecision } from '../model-router';
-import { TaskPlan, CodeOutput, ReviewResult } from '../pipeline-types';
+import { TaskPlan, CodeOutput, ReviewResult, StreamCallback } from '../pipeline-types';
 
 export interface ValidationResult {
   passed: boolean;
@@ -35,7 +35,8 @@ export class ValidatorAgent {
     taskPlan: TaskPlan,
     codeOutput: CodeOutput,
     reviewResult: ReviewResult,
-    modelDecision: RoutingDecision
+    modelDecision: RoutingDecision,
+    onChunk?: StreamCallback
   ): Promise<ValidationResult> {
     const isDocTask = isDocumentationTask(taskPlan, codeOutput);
     
@@ -176,6 +177,7 @@ Return your validation result.`;
       for await (const chunk of ollama.chat(modelDecision.resolvedModel, messages)) {
         if (chunk.message?.content) {
           fullContent += chunk.message.content;
+          onChunk?.(chunk.message.content, fullContent);
         }
       }
 

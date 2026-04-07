@@ -77,8 +77,8 @@ When generating code:
       blockedFilePatterns: ['*.env', 'node_modules/**', '.git/**', 'dist/**', 'build/**'],
       maxFileSize: 5242880,
       allowedLanguages: ['typescript', 'javascript', 'html', 'css'],
-      requireApproval: true,
-      autoExecute: false,
+      requireApproval: false,
+      autoExecute: true,
     },
   },
   {
@@ -106,8 +106,8 @@ Your expertise includes:
       blockedFilePatterns: ['*.env', 'node_modules/**', '.git/**', 'dist/**', 'build/**', 'secrets/**'],
       maxFileSize: 10485760,
       allowedLanguages: ['typescript', 'javascript', 'python', 'go', 'rust', 'java'],
-      requireApproval: true,
-      autoExecute: false,
+      requireApproval: false,
+      autoExecute: true,
     },
   },
   {
@@ -138,7 +138,7 @@ When reviewing code:
       maxFileSize: 5242880,
       allowedLanguages: ['typescript', 'javascript', 'python', 'go', 'java'],
       requireApproval: false,
-      autoExecute: false,
+      autoExecute: true,
     },
   },
   {
@@ -169,7 +169,7 @@ When auditing code:
       maxFileSize: 5242880,
       allowedLanguages: ['typescript', 'javascript', 'python', 'java'],
       requireApproval: false,
-      autoExecute: false,
+      autoExecute: true,
     },
   },
   {
@@ -200,8 +200,8 @@ When generating configurations:
       blockedFilePatterns: ['*.env', 'node_modules/**', '.git/**', 'secrets/**'],
       maxFileSize: 10485760,
       allowedLanguages: ['yaml', 'json', 'hcl', 'bash', 'shell'],
-      requireApproval: true,
-      autoExecute: false,
+      requireApproval: false,
+      autoExecute: true,
     },
   },
   {
@@ -232,8 +232,8 @@ When generating code:
       blockedFilePatterns: ['*.env', 'node_modules/**', '.git/**', 'dist/**'],
       maxFileSize: 20971520,
       allowedLanguages: ['python', 'sql', 'scala', 'java'],
-      requireApproval: true,
-      autoExecute: false,
+      requireApproval: false,
+      autoExecute: true,
     },
   },
   {
@@ -264,8 +264,8 @@ When writing documentation:
       blockedFilePatterns: ['*.env', 'node_modules/**', '.git/**', 'dist/**'],
       maxFileSize: 10485760,
       allowedLanguages: ['markdown', 'plaintext'],
-      requireApproval: true,
-      autoExecute: false,
+      requireApproval: false,
+      autoExecute: true,
     },
   },
 ];
@@ -324,8 +324,8 @@ export default function AgentEditorModal({ agent, onClose }: AgentEditorModalPro
         blockedFilePatterns: config.blockedFilePatterns || ['*.env', 'node_modules/**', '.git/**'],
         maxFileSize: 10485760,
         allowedLanguages: config.allowedLanguages || [],
-        requireApproval: config.requireApproval ?? true,
-        autoExecute: false,
+        requireApproval: config.requireApproval ?? false,
+        autoExecute: true,
       },
       pipelineStages: config.pipelineStages ? {
         stages: {
@@ -387,7 +387,24 @@ export default function AgentEditorModal({ agent, onClose }: AgentEditorModalPro
     setFormData(prev => ({ ...prev, enabledTools: tools }));
   }, []);
 
-  const updatePipelineStage = useCallback((stage: 'plan' | 'action' | 'review' | 'validate' | 'execute', enabled: boolean) => {
+  const updatePipelineStageModel = useCallback((stage: string, model: string) => {
+    setFormData(prev => {
+      const currentStages = prev.pipelineStages?.stages || {};
+      const currentStage = currentStages[stage] || { enabled: true };
+      return {
+        ...prev,
+        pipelineStages: {
+          ...prev.pipelineStages,
+          stages: {
+            ...currentStages,
+            [stage]: { ...currentStage, model: model || undefined },
+          },
+        },
+      };
+    });
+  }, []);
+
+  const updatePipelineStage = useCallback((stage: string, enabled: boolean) => {
     setFormData(prev => {
       const currentStages = prev.pipelineStages?.stages || {
         plan: { enabled: true },
@@ -685,51 +702,127 @@ export default function AgentEditorModal({ agent, onClose }: AgentEditorModalPro
             <div className="form-section">
               <div className="form-group">
                 <div className="tooltip-wrapper">
-                  <label>Pipeline Stages</label>
+                  <label>Pipeline Template</label>
                   <span className="tooltip-icon">?</span>
-                  <span className="tooltip-content">The pipeline determines how tasks are processed. Plan analyzes requirements, Action generates code, Review checks quality, Validate tests correctness, and Execute applies changes.</span>
+                  <span className="tooltip-content">The template determines which stages run and in what order. Each template is optimized for a different workflow.</span>
                 </div>
-                <div className="pipeline-stages">
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={formData.pipelineStages?.stages?.plan?.enabled ?? true}
-                      onChange={(e) => updatePipelineStage('plan', e.target.checked)}
-                    />
-                    Plan
-                  </label>
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={formData.pipelineStages?.stages?.action?.enabled ?? true}
-                      onChange={(e) => updatePipelineStage('action', e.target.checked)}
-                    />
-                    Action (Code Generation)
-                  </label>
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={formData.pipelineStages?.stages?.review?.enabled ?? true}
-                      onChange={(e) => updatePipelineStage('review', e.target.checked)}
-                    />
-                    Review
-                  </label>
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={formData.pipelineStages?.stages?.validate?.enabled ?? true}
-                      onChange={(e) => updatePipelineStage('validate', e.target.checked)}
-                    />
-                    Validate
-                  </label>
-                  <label className="checkbox-label">
-                    <input
-                      type="checkbox"
-                      checked={formData.pipelineStages?.stages?.execute?.enabled ?? true}
-                      onChange={(e) => updatePipelineStage('execute', e.target.checked)}
-                    />
-                    Execute
-                  </label>
+                <select
+                  value={formData.pipelineStages?.template || 'standard'}
+                  onChange={(e) => setFormData(prev => ({
+                    ...prev,
+                    pipelineStages: { ...prev.pipelineStages, template: e.target.value },
+                  }))}
+                >
+                  <option value="standard">🔄 Standard — Plan → Action → Review → Validate → Execute</option>
+                  <option value="quick-fix">⚡ Quick Fix — Plan → Action → Execute</option>
+                  <option value="deep-review">🔍 Deep Review — Research → Plan → Action → Review → Security → Validate → Execute</option>
+                  <option value="docs-only">📝 Docs Only — Research → Plan → Action → Review</option>
+                  <option value="refactor">🔧 Refactor — Research → Action → Review → Validate → Execute</option>
+                  <option value="complex">🧩 Complex Task — Research → Decompose → Plan → Action → Review → Validate → Execute</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <div className="tooltip-wrapper">
+                  <label>Tool Use (Agent Loop)</label>
+                  <span className="tooltip-icon">?</span>
+                  <span className="tooltip-content">When enabled, the Action stage can read files, search code, and run commands during code generation — iterating until done instead of a single LLM call.</span>
+                </div>
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={formData.pipelineStages?.enableAgentLoop ?? false}
+                    onChange={(e) => setFormData(prev => ({
+                      ...prev,
+                      pipelineStages: { ...prev.pipelineStages, enableAgentLoop: e.target.checked },
+                    }))}
+                  />
+                  <span className="toggle-slider"></span>
+                </label>
+              </div>
+
+              <div className="form-group">
+                <div className="tooltip-wrapper">
+                  <label>Stage Configuration</label>
+                  <span className="tooltip-icon">?</span>
+                  <span className="tooltip-content">Enable/disable stages and assign a specific model per stage. "Use Router" uses the model configured in Settings → Model Router.</span>
+                </div>
+                <div className="pipeline-stage-config">
+                  {[
+                    { id: 'research', label: 'Research', hint: 'Codebase analysis' },
+                    { id: 'plan', label: 'Plan', hint: 'Task planning' },
+                    { id: 'decompose', label: 'Decompose', hint: 'Break into subtasks' },
+                    { id: 'action', label: 'Action', hint: 'Code generation' },
+                    { id: 'review', label: 'Review', hint: 'Code quality check' },
+                    { id: 'security', label: 'Security', hint: 'Vulnerability scan' },
+                    { id: 'validate', label: 'Validate', hint: 'Acceptance criteria' },
+                    { id: 'execute', label: 'Execute', hint: 'Apply file changes' },
+                  ].map(stg => (
+                    <div key={stg.id} className="pipeline-stage-row">
+                      <label className="stage-toggle">
+                        <input
+                          type="checkbox"
+                          checked={formData.pipelineStages?.stages?.[stg.id]?.enabled ?? true}
+                          onChange={(e) => updatePipelineStage(stg.id, e.target.checked)}
+                        />
+                        <div className="stage-info">
+                          <span className="stage-label">{stg.label}</span>
+                          <span className="stage-hint">{stg.hint}</span>
+                        </div>
+                      </label>
+                      {stg.id !== 'execute' && (
+                        <select
+                          className="stage-model-select"
+                          value={formData.pipelineStages?.stages?.[stg.id]?.model || ''}
+                          onChange={(e) => updatePipelineStageModel(stg.id, e.target.value)}
+                          disabled={!(formData.pipelineStages?.stages?.[stg.id]?.enabled ?? true)}
+                        >
+                          <option value="">Use Router Default</option>
+                          {availableModels.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="form-group">
+                <div className="tooltip-wrapper">
+                  <label>Approval Checkpoints</label>
+                  <span className="tooltip-icon">?</span>
+                  <span className="tooltip-content">Select stages where the pipeline pauses for your review before continuing. This enables human-in-the-loop control.</span>
+                </div>
+                <p className="help-text">The pipeline will pause after these stages and wait for your approval in chat.</p>
+                <div className="approval-stages-grid">
+                  {[
+                    { id: 'plan', label: 'Plan', hint: 'Review the task breakdown' },
+                    { id: 'action', label: 'Action', hint: 'Review generated code' },
+                    { id: 'review', label: 'Review', hint: 'Review code quality verdict' },
+                    { id: 'security', label: 'Security', hint: 'Review security scan results' },
+                  ].map(stg => (
+                    <label key={stg.id} className="approval-stage-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={formData.pipelineStages?.approvalStages?.includes(stg.id) ?? false}
+                        onChange={(e) => {
+                          const current = formData.pipelineStages?.approvalStages || [];
+                          const updated = e.target.checked
+                            ? [...current, stg.id]
+                            : current.filter(s => s !== stg.id);
+                          setFormData(prev => ({
+                            ...prev,
+                            pipelineStages: { ...prev.pipelineStages, approvalStages: updated },
+                          }));
+                        }}
+                      />
+                      <div className="approval-stage-info">
+                        <span className="approval-stage-name">Pause after {stg.label}</span>
+                        <span className="approval-stage-hint">{stg.hint}</span>
+                      </div>
+                    </label>
+                  ))}
                 </div>
               </div>
 
@@ -763,7 +856,7 @@ export default function AgentEditorModal({ agent, onClose }: AgentEditorModalPro
                 <label className="toggle">
                   <input
                     type="checkbox"
-                    checked={formData.constraints?.requireApproval ?? true}
+                    checked={formData.constraints?.requireApproval ?? false}
                     onChange={(e) => setFormData(prev => ({
                       ...prev,
                       constraints: {

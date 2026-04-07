@@ -148,14 +148,34 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
       activePipelineRef.current = null;
     };
 
+    const handleApprovalRequest = (_event: any, data: { runId: string; stage: string; stageResult: any; message: string }) => {
+      if (!activePipelineRef.current) return;
+
+      dispatch({ type: 'ADD_MESSAGE', payload: {
+        conversationId: activePipelineRef.current.convId,
+        message: {
+          id: uuidv4(),
+          role: 'assistant' as const,
+          content: data.message,
+          timestamp: Date.now(),
+          isPipeline: true,
+          pipelineStatus: 'awaiting_approval' as const,
+          pipelineRunId: data.runId,
+          approvalData: { runId: data.runId, stage: data.stage },
+        }
+      }});
+    };
+
     ipcRenderer.on('pipeline:complete', handlePipelineComplete);
     ipcRenderer.on('pipeline:error', handlePipelineError);
     ipcRenderer.on('pipeline:cancelled', handlePipelineCancelled);
+    ipcRenderer.on('pipeline:await_approval', handleApprovalRequest);
 
     return () => {
       ipcRenderer.off('pipeline:complete', handlePipelineComplete);
       ipcRenderer.off('pipeline:error', handlePipelineError);
       ipcRenderer.off('pipeline:cancelled', handlePipelineCancelled);
+      ipcRenderer.off('pipeline:await_approval', handleApprovalRequest);
     };
   }, [dispatch]);
 
@@ -210,7 +230,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
       )
     : null;
 
-  const sendMessage = useCallback(async (content: string, attachments: FileAttachment[], runAsPipeline: boolean = false, agentId?: string, template?: string) => {
+  const sendMessage = useCallback(async (content: string, attachments: FileAttachment[], runAsPipeline: boolean = false, agentId?: string) => {
     if (!activeConversation) {
       dispatch({ type: 'CREATE_CONVERSATION', payload: { model: settings.model } });
       const newConvId = state.conversations.length > 0 ? state.conversations[0]?.id : null;
@@ -297,8 +317,15 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
     if (runAsPipeline) {
       console.log('[ChatView] Pipeline mode triggered', agentId ? `with agent ${agentId}` : '');
       
-      if (!workspace.rootPath) {
-        showToast('Please open a workspace folder first before using "Send to Agent". Click on the File Explorer icon in the sidebar to open a folder.', 'error');
+      let projectRoot = workspace.rootPath;
+
+      if (!projectRoot && settings.defaultWorkspacePath) {
+        projectRoot = settings.defaultWorkspacePath;
+        console.log('[ChatView] Using default workspace path:', projectRoot);
+      }
+
+      if (!projectRoot) {
+        showToast('Please set a default workspace in Settings or open a project folder.', 'error');
         return;
       }
 
@@ -326,7 +353,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
       dispatch({ type: 'ADD_MESSAGE', payload: { conversationId: convId, message: {
         id: pipelineMessageId,
         role: 'assistant',
-        content: `Task moved to Pipeline${template && template !== 'standard' ? ` (${template})` : ''}${agentId ? ' with custom agent' : ''}`,
+        content: `Task moved to Pipeline${agentId ? ' with custom agent' : ''}`,
         timestamp: Date.now(),
         isPipeline: true,
         pipelineStatus: 'running',
@@ -344,9 +371,8 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
             timeoutMs: 10 * 60 * 1000,
             autoExecute: true,
           },
-          projectRoot: workspace.rootPath,
+          projectRoot,
           agentId,
-          template,
         });
         console.log('[ChatView] Pipeline started:', result.runId);
         
@@ -949,6 +975,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
               isPipeline={msg.isPipeline}
               pipelineStatus={msg.pipelineStatus}
               pipelineRunId={msg.pipelineRunId}
+              approvalData={msg.approvalData}
               usage={msg.usage}
               suggestions={idx === activeConversation.messages.length - 1 ? msg.suggestions : undefined}
               onEdit={msg.role === 'user' ? (newContent) => handleEditMessage(msg.id, newContent) : undefined}
@@ -960,6 +987,19 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
                 ipc?.invoke('memory:add', { category: 'general', content: text, source: 'selection' });
                 showToast('Saved to memory', 'success');
               }}
+              onApprovalDecision={msg.approvalData ? (decision: 'approve' | 'reject') => {
+                const ipc = (window as any).ipcRenderer;
+                if (!ipc || !msg.approvalData) return;
+                ipc.invoke(decision === 'approve' ? 'pipeline:approve' : 'pipeline:reject', { runId: msg.approvalData.runId });
+                dispatch({ type: 'UPDATE_MESSAGE', payload: {
+                  conversationId: activeConversation.id,
+                  messageId: msg.id,
+                  pipelineStatus: decision === 'approve' ? 'running' : 'cancelled',
+                  content: decision === 'approve'
+                    ? msg.content + '\n\n*Approved — pipeline continuing...*'
+                    : msg.content + '\n\n*Rejected — pipeline stopped.*',
+                }});
+              } : undefined}
             />
           ))}
           <div ref={messagesEndRef} />

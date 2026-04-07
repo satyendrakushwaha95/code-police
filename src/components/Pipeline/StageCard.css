@@ -1181,3 +1181,156 @@
   font-style: italic;
   margin-top: 2px;
 }
+
+/* --- Streaming Preview --- */
+.stage-stream-preview {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin: 8px;
+}
+
+.stream-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+}
+
+.stream-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.stream-size {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.stream-content {
+  margin: 0;
+  padding: 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  max-height: 300px;
+  overflow-y: auto;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+
+/* --- Decompose Results --- */
+.decompose-results {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.decompose-strategy {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  padding: 8px 12px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--accent);
+}
+
+.decompose-subtasks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.decompose-subtask-card {
+  padding: 10px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.subtask-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.subtask-id {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent);
+  padding: 1px 6px;
+  background: var(--accent-glow);
+  border-radius: 4px;
+}
+
+.subtask-complexity {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 8px;
+  text-transform: uppercase;
+}
+
+.subtask-complexity.complexity-low {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.subtask-complexity.complexity-medium {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+
+.subtask-complexity.complexity-high {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+.subtask-template-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+
+.subtask-description {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.subtask-agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  padding: 3px 8px;
+  background: var(--accent-glow);
+  border: 1px solid rgba(124, 106, 255, 0.2);
+  border-radius: 10px;
+  color: var(--accent);
+  font-weight: 500;
+  width: fit-content;
+}
+
+.subtask-deps {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}

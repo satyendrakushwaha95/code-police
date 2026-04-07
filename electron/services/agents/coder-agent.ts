@@ -2,7 +2,7 @@ import path from 'node:path';
 import { OllamaChatMessage } from '../embeddings';
 import { getSharedOllama } from '../shared-ollama';
 import { RoutingDecision } from '../model-router';
-import { TaskPlan, CodeOutput, FileChange } from '../pipeline-types';
+import { TaskPlan, CodeOutput, FileChange, StreamCallback } from '../pipeline-types';
 
 export class SecurityError extends Error {
   constructor(message: string, public filePath?: string) {
@@ -33,7 +33,8 @@ export class CoderAgent {
     fileContents: Map<string, string>,
     reviewIssues: Array<{ description: string; file?: string; severity?: string }>,
     modelDecision: RoutingDecision,
-    agentConfig?: AgentCoderConfig
+    agentConfig?: AgentCoderConfig,
+    onChunk?: StreamCallback
   ): Promise<CodeOutput> {
     const fileContentSection = Array.from(fileContents.entries())
       .map(([filePath, content]) => `### ${filePath}\n\`\`\`\n${content}\n\`\`\``)
@@ -107,6 +108,7 @@ Generate the code changes to complete this task.`;
       for await (const chunk of ollama.chat(modelDecision.resolvedModel, messages)) {
         if (chunk.message?.content) {
           rawOutput += chunk.message.content;
+          onChunk?.(chunk.message.content, rawOutput);
         }
       }
 
@@ -120,84 +122,144 @@ Generate the code changes to complete this task.`;
   }
 
   private parseResponse(rawOutput: string): CodeOutput {
-    // Try multiple parsing strategies
     let parsed: any = null;
-    
-    // Strategy 1: Try to find JSON block in markdown code fence
+
+    // Strategy 1: markdown code fence
     const codeBlockMatch = rawOutput.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
     if (codeBlockMatch) {
-      try {
-        parsed = JSON.parse(codeBlockMatch[1].trim());
-      } catch {}
+      parsed = this.tryParseJSON(codeBlockMatch[1].trim());
     }
-    
-    // Strategy 2: Find the first { and match balanced braces
+
+    // Strategy 2: balanced brace extraction
     if (!parsed) {
-      const startIndex = rawOutput.indexOf('{');
-      if (startIndex !== -1) {
-        let braceCount = 0;
-        let endIndex = -1;
-        let inString = false;
-        let escapeNext = false;
-        
-        for (let i = startIndex; i < rawOutput.length; i++) {
-          const char = rawOutput[i];
-          
-          if (escapeNext) {
-            escapeNext = false;
-            continue;
-          }
-          
-          if (char === '\\' && inString) {
-            escapeNext = true;
-            continue;
-          }
-          
-          if (char === '"' && !escapeNext) {
-            inString = !inString;
-            continue;
-          }
-          
-          if (!inString) {
-            if (char === '{') braceCount++;
-            if (char === '}') braceCount--;
-            if (braceCount === 0) {
-              endIndex = i;
-              break;
-            }
-          }
-        }
-        
-        if (endIndex !== -1) {
-          try {
-            parsed = JSON.parse(rawOutput.substring(startIndex, endIndex + 1));
-          } catch {}
-        }
-      }
+      parsed = this.extractBalancedJSON(rawOutput);
     }
-    
-    // Strategy 3: Regex fallback (original)
+
+    // Strategy 3: greedy regex
     if (!parsed) {
       const jsonMatch = rawOutput.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        try {
-          parsed = JSON.parse(jsonMatch[0]);
-        } catch {}
+        parsed = this.tryParseJSON(jsonMatch[0]);
       }
     }
 
+    // Strategy 4: repair common JSON issues and retry
     if (!parsed) {
-      throw new Error('No valid JSON found in response');
+      const repaired = this.repairJSON(rawOutput);
+      if (repaired) {
+        parsed = this.tryParseJSON(repaired);
+      }
     }
 
-    if (!Array.isArray(parsed.file_changes)) {
-      throw new Error('Missing file_changes array');
+    // Strategy 5: extract file_changes array directly
+    if (!parsed) {
+      const arrayMatch = rawOutput.match(/"file_changes"\s*:\s*(\[[\s\S]*\])/);
+      if (arrayMatch) {
+        const wrapped = `{"file_changes": ${arrayMatch[1]}, "summary": ""}`;
+        parsed = this.tryParseJSON(wrapped);
+      }
+    }
+
+    // Strategy 6: synthesize from raw output (last resort)
+    if (!parsed || !Array.isArray(parsed.file_changes)) {
+      console.warn('[CoderAgent] All JSON parsing strategies failed, attempting raw extraction');
+      const fileChanges = this.extractFileChangesFromText(rawOutput);
+      if (fileChanges.length > 0) {
+        return { file_changes: fileChanges, summary: 'Extracted from non-JSON response' };
+      }
+      throw new Error('No valid JSON found in response');
     }
 
     return {
       file_changes: parsed.file_changes,
       summary: parsed.summary || ''
     };
+  }
+
+  private tryParseJSON(text: string): any {
+    try { return JSON.parse(text); } catch {}
+    const repaired = this.repairJSON(text);
+    if (repaired) {
+      try { return JSON.parse(repaired); } catch {}
+    }
+    return null;
+  }
+
+  private repairJSON(text: string): string | null {
+    try {
+      let fixed = text;
+      // Remove trailing commas before } or ]
+      fixed = fixed.replace(/,\s*([}\]])/g, '$1');
+      // Remove control characters inside strings (except \n \t \r)
+      fixed = fixed.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+      // Fix single quotes to double quotes (rough)
+      if (!fixed.includes('"') && fixed.includes("'")) {
+        fixed = fixed.replace(/'/g, '"');
+      }
+      // Extract just the JSON object if there's text around it
+      const jsonStart = fixed.indexOf('{');
+      const jsonEnd = fixed.lastIndexOf('}');
+      if (jsonStart >= 0 && jsonEnd > jsonStart) {
+        fixed = fixed.substring(jsonStart, jsonEnd + 1);
+      }
+      return fixed;
+    } catch {
+      return null;
+    }
+  }
+
+  private extractBalancedJSON(text: string): any {
+    const startIndex = text.indexOf('{');
+    if (startIndex === -1) return null;
+
+    let braceCount = 0;
+    let endIndex = -1;
+    let inString = false;
+    let escapeNext = false;
+
+    for (let i = startIndex; i < text.length; i++) {
+      const char = text[i];
+      if (escapeNext) { escapeNext = false; continue; }
+      if (char === '\\' && inString) { escapeNext = true; continue; }
+      if (char === '"' && !escapeNext) { inString = !inString; continue; }
+      if (!inString) {
+        if (char === '{') braceCount++;
+        if (char === '}') braceCount--;
+        if (braceCount === 0) { endIndex = i; break; }
+      }
+    }
+
+    if (endIndex === -1) return null;
+    return this.tryParseJSON(text.substring(startIndex, endIndex + 1));
+  }
+
+  private extractFileChangesFromText(text: string): Array<{ file_path: string; operation: 'create' | 'modify' | 'delete'; content: string; explanation: string }> {
+    const changes: Array<{ file_path: string; operation: 'create' | 'modify' | 'delete'; content: string; explanation: string }> = [];
+
+    // Look for code blocks with file paths: ```language:filepath or ### filepath
+    const blockPattern = /(?:###\s+(.+?)\n|```\w*:(.+?)\n)([\s\S]*?)```/g;
+    let match;
+    while ((match = blockPattern.exec(text)) !== null) {
+      const filePath = (match[1] || match[2] || '').trim();
+      const content = (match[3] || '').trim();
+      if (filePath && content && filePath.includes('.')) {
+        changes.push({ file_path: filePath, operation: 'create', content, explanation: 'Extracted from response' });
+      }
+    }
+
+    // Also look for standalone code blocks with file references above them
+    if (changes.length === 0) {
+      const simpleBlockPattern = /(?:`([^`]+\.[a-zA-Z]+)`[:\s]*\n)?```\w*\n([\s\S]*?)```/g;
+      while ((match = simpleBlockPattern.exec(text)) !== null) {
+        const filePath = (match[1] || '').trim();
+        const content = (match[2] || '').trim();
+        if (filePath && content) {
+          changes.push({ file_path: filePath, operation: 'create', content, explanation: 'Extracted from code block' });
+        }
+      }
+    }
+
+    return changes;
   }
 
   private validateSecurity(fileChanges: FileChange[], agentConfig?: AgentCoderConfig): void {
@@ -229,50 +291,45 @@ Generate the code changes to complete this task.`;
           }
         }
       }
-
-      if (constraints?.allowedFilePatterns && constraints.allowedFilePatterns.length > 0) {
-        // Skip allowed check if wildcard is present
-        if (constraints.allowedFilePatterns.includes('*') || constraints.allowedFilePatterns.includes('**/*')) {
-          continue;
-        }
-
-        let matchesAllowed = false;
-        for (const pattern of constraints.allowedFilePatterns) {
-          if (this.matchPattern(change.file_path, pattern)) {
-            matchesAllowed = true;
-            break;
-          }
-        }
-        if (!matchesAllowed) {
-          throw new SecurityError(
-            `File path does not match allowed patterns: ${change.file_path}`,
-            change.file_path
-          );
-        }
-      }
     }
   }
 
   private matchPattern(filePath: string, pattern: string): boolean {
-    // Convert glob pattern to regex
-    // ** matches any path including subdirectories
-    // * matches any characters except /
+    if (pattern === '*' || pattern === '**/*') return true;
+
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    const fileName = normalizedPath.split('/').pop() || normalizedPath;
+
+    // Extension-only patterns (*.java, *.ts, *.env) — match filename part
+    if (pattern.startsWith('*.') && !pattern.includes('/')) {
+      const ext = pattern.slice(1);
+      return fileName.endsWith(ext);
+    }
+
+    // Exact filename patterns without path (e.g., .env, Dockerfile)
+    if (!pattern.includes('/') && !pattern.includes('*')) {
+      return fileName === pattern;
+    }
+
+    // Dotfile patterns (e.g., .env.*)
+    if (pattern.startsWith('.') && pattern.includes('*')) {
+      const prefix = pattern.replace(/\*/g, '');
+      return fileName.startsWith(prefix);
+    }
+
+    // Convert glob to regex for complex patterns
     let regex = pattern
       .replace(/\./g, '\\.')
       .replace(/\*\*/g, '{{DOUBLE_STAR}}')
       .replace(/\*/g, '{{SINGLE_STAR}}')
       .replace(/\{\{DOUBLE_STAR\}\}/g, '.*')
       .replace(/\{\{SINGLE_STAR\}\}/g, '[^/]*');
-    
-    // Check multiple matching strategies:
-    // 1. Exact match of the pattern
-    const exactMatch = new RegExp(`^${regex}$`).test(filePath);
-    // 2. Pattern matches somewhere in the path (for ** patterns)
-    const containsMatch = new RegExp(regex).test(filePath);
-    // 3. Pattern without trailing * matches prefix
-    const prefixMatch = new RegExp(`^${regex.replace(/\\\.\*$/, '')}`).test(filePath);
-    
-    return exactMatch || containsMatch || prefixMatch;
+
+    if (new RegExp(`^${regex}$`).test(normalizedPath)) return true;
+    if (new RegExp(regex).test(normalizedPath)) return true;
+    if (!pattern.includes('/') && new RegExp(`^${regex}$`).test(fileName)) return true;
+
+    return false;
   }
 }
 

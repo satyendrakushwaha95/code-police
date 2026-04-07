@@ -39,9 +39,13 @@ export interface AgentPipelineConfig {
     review: { enabled: boolean; model?: string };
     validate: { enabled: boolean; model?: string };
     execute: { enabled: boolean; model?: string };
+    [key: string]: { enabled: boolean; model?: string } | undefined;
   };
   maxRetries: number;
   timeoutMs: number;
+  template?: string;
+  enableAgentLoop?: boolean;
+  approvalStages?: string[];
 }
 
 export interface AgentConfig {

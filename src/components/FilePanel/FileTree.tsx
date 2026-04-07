@@ -11,13 +11,17 @@ interface FileNode {
 }
 
 interface FileTreeProps {
-  onFileSelect: (content: string, name: string, path: string) => void;
+  onFileSelect: (content: string, name: string, path: string, absolutePath: string) => void;
+  initialExpanded?: string[];
+  onExpandedChange?: (expanded: string[]) => void;
 }
 
-export default function FileTree({ onFileSelect }: FileTreeProps) {
+export default function FileTree({ onFileSelect, initialExpanded, onExpandedChange }: FileTreeProps) {
   const { state: workspace, openFolder } = useWorkspace();
   const [rootNodes, setRootNodes] = useState<FileNode[]>([]);
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(
+    new Set(initialExpanded || [])
+  );
 
   const supportsFileSystemAccess = !!(window as any).ipcRenderer || 'showDirectoryPicker' in window;
 
@@ -89,9 +93,9 @@ export default function FileTree({ onFileSelect }: FileTreeProps) {
       newExpanded.delete(node.path);
     } else {
       newExpanded.add(node.path);
-      // Data is already fully parsed from filesIndex, no need to lazy load children anymore!
     }
     setExpandedPaths(newExpanded);
+    onExpandedChange?.(Array.from(newExpanded));
   };
 
   const handleFileClick = async (node: FileNode) => {
@@ -106,7 +110,7 @@ export default function FileTree({ onFileSelect }: FileTreeProps) {
       // to the parent onFileSelect. The parent or ChatInput can read it.
       // Currently, we don't have a direct "read file" IPC. Assuming we might need to add one.
       const content = await (window as any).ipcRenderer.invoke('fs:readFile', node.absolutePath);
-      onFileSelect(content, node.name, node.path);
+      onFileSelect(content, node.name, node.path, node.absolutePath!);
     } catch (err) {
       console.error('Error reading file:', err);
     }

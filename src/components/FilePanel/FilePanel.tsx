@@ -1,15 +1,19 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import FileTree from './FileTree';
+import CodeEditor from './CodeEditor';
 import { useWorkspace } from '../../store/WorkspaceContext';
 import { useSettings } from '../../store/SettingsContext';
 import { useToast } from '../../hooks/useToast';
+import { useEditorState } from '../../hooks/useEditorState';
 import './FilePanel.css';
 
 interface OpenFile {
   id: string;
   name: string;
   path: string;
+  absolutePath: string;
   content: string;
+  diskContent: string;
   language: string;
   modified: boolean;
 }
@@ -41,9 +45,17 @@ export default function FilePanel({ isOpen, onClose, onAddContext }: FilePanelPr
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [view, setView] = useState<'tree' | 'editor'>('tree');
   const [panelWidth, setPanelWidth] = useState(350);
+  const [pendingCloseId, setPendingCloseId] = useState<string | null>(null);
+  const [expandedFolders, setExpandedFolders] = useState<string[]>([]);
   const panelRef = useRef<HTMLDivElement>(null);
   const isResizing = useRef(false);
+  const hasRestoredRef = useRef(false);
   const { showToast } = useToast();
+  const editorState = useEditorState();
+
+  const activeFile = openFiles.find(f => f.id === activeFileId) || null;
+
+  // --- Resize Handle ---
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -74,9 +86,9 @@ export default function FilePanel({ isOpen, onClose, onAddContext }: FilePanelPr
     document.body.style.userSelect = 'none';
   };
 
-  const activeFile = openFiles.find(f => f.id === activeFileId) || null;
+  // --- File Operations ---
 
-  const handleFileSelect = (content: string, name: string, path: string) => {
+  const handleFileSelect = (content: string, name: string, path: string, absolutePath: string) => {
     const existing = openFiles.find(f => f.path === path);
     if (existing) {
       setActiveFileId(existing.id);
@@ -86,7 +98,9 @@ export default function FilePanel({ isOpen, onClose, onAddContext }: FilePanelPr
         id,
         name,
         path,
+        absolutePath,
         content,
+        diskContent: content,
         language: detectLanguage(name),
         modified: false,
       };
@@ -96,59 +110,43 @@ export default function FilePanel({ isOpen, onClose, onAddContext }: FilePanelPr
     setView('editor');
   };
 
-  const handleCloseFile = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setOpenFiles(prev => prev.filter(f => f.id !== id));
-    if (activeFileId === id) {
-      const remaining = openFiles.filter(f => f.id !== id);
-      setActiveFileId(remaining.length > 0 ? remaining[remaining.length - 1].id : null);
-      if (remaining.length === 0) setView('tree');
-    }
-  };
-
   const handleContentChange = (newContent: string) => {
     setOpenFiles(prev => prev.map(f =>
-      f.id === activeFileId ? { ...f, content: newContent, modified: true } : f
+      f.id === activeFileId
+        ? { ...f, content: newContent, modified: newContent !== f.diskContent }
+        : f
     ));
   };
 
-  const handleSaveFile = async () => {
-    if (!activeFile) return;
+  const handleSaveFile = useCallback(async () => {
+    const file = openFiles.find(f => f.id === activeFileId);
+    if (!file) return;
 
-    // Try using the File System Access API for native save
-    if ('showSaveFilePicker' in window) {
-      try {
-        const handle = await (window as any).showSaveFilePicker({
-          suggestedName: activeFile.name,
-          types: [{
-            description: 'File',
-            accept: { 'text/plain': [`.${activeFile.name.split('.').pop() || 'txt'}`] },
-          }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(activeFile.content);
-        await writable.close();
-        setOpenFiles(prev => prev.map(f =>
-          f.id === activeFileId ? { ...f, modified: false } : f
-        ));
-        return;
-      } catch (err: any) {
-        if (err.name === 'AbortError') return;
-      }
+    if (!file.absolutePath) {
+      showToast('Cannot save — file has no disk path', 'error');
+      return;
     }
 
-    // Fallback: trigger download
-    const blob = new Blob([activeFile.content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = activeFile.name;
-    a.click();
-    URL.revokeObjectURL(url);
-    setOpenFiles(prev => prev.map(f =>
-      f.id === activeFileId ? { ...f, modified: false } : f
-    ));
-  };
+    const ipc = (window as any).ipcRenderer;
+    if (!ipc) {
+      showToast('Save requires Electron runtime', 'error');
+      return;
+    }
+
+    const result = await ipc.invoke('fs:writeFile', {
+      filePath: file.absolutePath,
+      content: file.content,
+    });
+
+    if (result.success) {
+      setOpenFiles(prev => prev.map(f =>
+        f.id === activeFileId ? { ...f, modified: false, diskContent: file.content } : f
+      ));
+      showToast(`Saved ${file.name}`, 'success');
+    } else {
+      showToast(`Failed to save: ${result.error}`, 'error');
+    }
+  }, [openFiles, activeFileId, showToast]);
 
   const handleCreateNewFile = () => {
     const name = prompt('Enter file name:', 'untitled.txt');
@@ -158,7 +156,9 @@ export default function FilePanel({ isOpen, onClose, onAddContext }: FilePanelPr
       id,
       name,
       path: name,
+      absolutePath: '',
       content: '',
+      diskContent: '',
       language: detectLanguage(name),
       modified: true,
     };
@@ -172,13 +172,101 @@ export default function FilePanel({ isOpen, onClose, onAddContext }: FilePanelPr
     onAddContext(activeFile.content, activeFile.name);
   };
 
+  const handleSendToAgent = () => {
+    if (!activeFile) return;
+    onAddContext(activeFile.content, activeFile.name);
+    showToast(`Added ${activeFile.name} to agent context`, 'success');
+  };
+
+  // --- Tab Close with Dirty Confirmation ---
+
+  const closeFileImmediate = useCallback((id: string) => {
+    setPendingCloseId(null);
+    setOpenFiles(prev => {
+      const remaining = prev.filter(f => f.id !== id);
+      if (activeFileId === id) {
+        const newActive = remaining.length > 0 ? remaining[remaining.length - 1].id : null;
+        setActiveFileId(newActive);
+        if (remaining.length === 0) setView('tree');
+      }
+      return remaining;
+    });
+  }, [activeFileId]);
+
+  const handleCloseFile = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const file = openFiles.find(f => f.id === id);
+
+    if (file?.modified) {
+      setPendingCloseId(id);
+      return;
+    }
+
+    closeFileImmediate(id);
+  };
+
+  const handleConfirmSave = async () => {
+    if (!pendingCloseId) return;
+    const file = openFiles.find(f => f.id === pendingCloseId);
+    if (!file) return;
+
+    if (!file.absolutePath) {
+      showToast('Cannot save — file has no disk path', 'error');
+      setPendingCloseId(null);
+      return;
+    }
+
+    const ipc = (window as any).ipcRenderer;
+    if (!ipc) {
+      setPendingCloseId(null);
+      return;
+    }
+
+    const result = await ipc.invoke('fs:writeFile', {
+      filePath: file.absolutePath,
+      content: file.content,
+    });
+
+    if (result.success) {
+      showToast(`Saved ${file.name}`, 'success');
+      closeFileImmediate(pendingCloseId);
+    } else {
+      showToast(`Failed to save: ${result.error}`, 'error');
+      setPendingCloseId(null);
+    }
+  };
+
+  const handleConfirmDiscard = () => {
+    if (pendingCloseId) closeFileImmediate(pendingCloseId);
+  };
+
+  const handleConfirmCancel = () => {
+    setPendingCloseId(null);
+  };
+
+  // --- Global Ctrl+S ---
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (activeFile && view === 'editor') {
+          handleSaveFile();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeFile, view, handleSaveFile]);
+
+  // --- Semantic Search ---
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const { state: workspace, indexWorkspace, searchWorkspace } = useWorkspace();
+  const { state: workspace, indexWorkspace, searchWorkspace, refreshFilesIndex } = useWorkspace();
   const { settings } = useSettings();
 
-  // Search logic
   const handleSearch = async (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && searchQuery.trim()) {
       if (!workspace.rootPath) {
@@ -231,8 +319,7 @@ export default function FilePanel({ isOpen, onClose, onAddContext }: FilePanelPr
   };
 
   const handleSearchResultClick = (result: any) => {
-    // A search result contains relativeFilePath and content. We can open it in the editor
-    handleFileSelect(result.content, result.relativeFilePath.split('/').pop() || 'chunk', result.relativeFilePath);
+    handleFileSelect(result.content, result.relativeFilePath.split('/').pop() || 'chunk', result.relativeFilePath, '');
   };
 
   const handleAddSearchResultToContext = (result: any, e: React.MouseEvent) => {
@@ -241,6 +328,89 @@ export default function FilePanel({ isOpen, onClose, onAddContext }: FilePanelPr
     onAddContext(contextText, `${result.relativeFilePath}:${result.startLine}`);
     showToast(`Added ${result.relativeFilePath} to context`, 'success');
   };
+
+  // --- Pipeline Integration: auto-refresh file tree ---
+
+  useEffect(() => {
+    const ipc = (window as any).ipcRenderer;
+    if (!ipc) return;
+
+    const handlePipelineComplete = () => {
+      if (workspace.rootPath) {
+        refreshFilesIndex();
+      }
+    };
+
+    ipc.on('pipeline:complete', handlePipelineComplete);
+    return () => ipc.off('pipeline:complete', handlePipelineComplete);
+  }, [workspace.rootPath, refreshFilesIndex]);
+
+  // --- Session Persistence: restore on mount ---
+
+  useEffect(() => {
+    if (hasRestoredRef.current) return;
+    hasRestoredRef.current = true;
+
+    const saved = editorState.load();
+    if (!saved) return;
+
+    setExpandedFolders(saved.expandedFolders);
+
+    const restoreTabs = async () => {
+      const ipc = (window as any).ipcRenderer;
+      if (!ipc) return;
+
+      const restored: OpenFile[] = [];
+      for (const tab of saved.openTabs) {
+        if (!tab.absolutePath) continue;
+        try {
+          const content = await ipc.invoke('fs:readFile', tab.absolutePath);
+          restored.push({
+            id: `file-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            name: tab.path.split('/').pop() || '',
+            path: tab.path,
+            absolutePath: tab.absolutePath,
+            content,
+            diskContent: content,
+            language: detectLanguage(tab.path),
+            modified: false,
+          });
+        } catch {
+          // File no longer exists on disk — skip silently
+        }
+      }
+
+      if (restored.length > 0) {
+        setOpenFiles(restored);
+        const activeTab = saved.openTabs.find(t => t.isActive);
+        const activeFile = activeTab
+          ? restored.find(f => f.path === activeTab.path)
+          : restored[0];
+        setActiveFileId(activeFile?.id || restored[0].id);
+        setView('editor');
+      }
+    };
+
+    restoreTabs();
+  }, []);
+
+  // --- Session Persistence: auto-save on changes (debounced) ---
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      editorState.save({
+        expandedFolders,
+        openTabs: openFiles.map(f => ({
+          path: f.path,
+          absolutePath: f.absolutePath,
+          isActive: f.id === activeFileId,
+        })),
+      });
+    }, 500);
+    return () => clearTimeout(timeout);
+  }, [openFiles, activeFileId, expandedFolders]);
+
+  // --- Render ---
 
   if (!isOpen) return null;
 
@@ -336,7 +506,11 @@ export default function FilePanel({ isOpen, onClose, onAddContext }: FilePanelPr
           </div>
         )}
 
-        <FileTree onFileSelect={handleFileSelect} />
+        <FileTree
+          onFileSelect={handleFileSelect}
+          initialExpanded={expandedFolders}
+          onExpandedChange={setExpandedFolders}
+        />
       </div>
 
       <div className="editor-area" style={{ display: view === 'editor' ? 'flex' : 'none' }}>
@@ -356,6 +530,20 @@ export default function FilePanel({ isOpen, onClose, onAddContext }: FilePanelPr
           </div>
         )}
 
+        {/* Dirty Confirmation Bar */}
+        {pendingCloseId && (
+          <div className="dirty-confirm-bar">
+            <span>
+              &ldquo;{openFiles.find(f => f.id === pendingCloseId)?.name}&rdquo; has unsaved changes.
+            </span>
+            <div className="dirty-confirm-actions">
+              <button className="btn btn-sm btn-primary" onClick={handleConfirmSave}>Save</button>
+              <button className="btn btn-sm btn-danger" onClick={handleConfirmDiscard}>Discard</button>
+              <button className="btn btn-sm btn-ghost" onClick={handleConfirmCancel}>Cancel</button>
+            </div>
+          </div>
+        )}
+
         {/* Editor */}
         {activeFile ? (
           <div className="editor-content">
@@ -366,6 +554,12 @@ export default function FilePanel({ isOpen, onClose, onAddContext }: FilePanelPr
                 <button className="btn btn-ghost" onClick={handleUseAsContext} title="Use as chat context">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
                   Use as Context
+                </button>
+                <button className="btn btn-ghost" onClick={handleSendToAgent} title="Send to active agent pipeline">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/>
+                  </svg>
+                  Send to Agent
                 </button>
                 <button className="btn btn-primary" onClick={handleSaveFile}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
@@ -378,17 +572,12 @@ export default function FilePanel({ isOpen, onClose, onAddContext }: FilePanelPr
                 <p>File too large to display ({activeFile.content.length.toLocaleString()} chars)</p>
               </div>
             ) : (
-              <div className="file-editor">
-                <div className="editor-line-numbers">
-                  {activeFile.content.split('\n').map((_, i) => (
-                    <div key={i} className="line-number">{i + 1}</div>
-                  ))}
-                </div>
-                <textarea
-                  value={activeFile.content}
-                  onChange={(e) => handleContentChange(e.target.value)}
-                  spellCheck={false}
-                  className="editor-textarea"
+              <div className="file-editor" style={{ flex: 1, minHeight: 0 }}>
+                <CodeEditor
+                  code={activeFile.content}
+                  language={activeFile.language}
+                  onChange={handleContentChange}
+                  onSave={handleSaveFile}
                 />
               </div>
             )}

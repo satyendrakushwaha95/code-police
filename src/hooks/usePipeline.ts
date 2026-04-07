@@ -108,7 +108,8 @@ export type PipelineTemplate =
   | 'standard'
   | 'deep-review'
   | 'docs-only'
-  | 'refactor';
+  | 'refactor'
+  | 'complex';
 
 export interface PipelineTemplateConfig {
   id: PipelineTemplate;
@@ -118,10 +119,31 @@ export interface PipelineTemplateConfig {
   icon: string;
 }
 
+export interface DecompositionResult {
+  subtasks: Array<{
+    id: string;
+    description: string;
+    template: PipelineTemplate;
+    estimated_complexity: 'low' | 'medium' | 'high';
+    dependencies: string[];
+    agentId?: string;
+    agentReason?: string;
+  }>;
+  strategy: string;
+}
+
+export interface StageStreamChunk {
+  runId: string;
+  stage: string;
+  content: string;
+  accumulated: string;
+  done: boolean;
+}
+
 export interface PipelineRun {
   id: string;
   task_description: string;
-  status: 'running' | 'complete' | 'failed' | 'cancelled';
+  status: 'running' | 'complete' | 'failed' | 'cancelled' | 'resumable' | 'awaiting_approval';
   created_at: number;
   completed_at?: number;
   retry_count: number;
@@ -129,6 +151,11 @@ export interface PipelineRun {
   template?: PipelineTemplate;
   stage_order?: string[];
   stages: Record<string, StageResult<any>>;
+  parent_run_id?: string;
+  subtask_index?: number;
+  agent_id?: string;
+  last_completed_stage?: string;
+  children?: PipelineRun[];
 }
 
 export interface PipelineOptions {
@@ -136,14 +163,17 @@ export interface PipelineOptions {
   timeoutMs: number;
   autoExecute: boolean;
   smartSkip?: boolean;
+  enableAgentLoop?: boolean;
+  maxToolIterations?: number;
 }
 
-export type PipelineStage = 'plan' | 'action' | 'review' | 'validate' | 'execute' | 'research' | 'security';
+export type PipelineStage = 'plan' | 'action' | 'review' | 'validate' | 'execute' | 'research' | 'security' | 'decompose';
 
 const ipcRenderer = (window as any).ipcRenderer;
 
 interface UsePipelineReturn {
-  run: (task: string, options: PipelineOptions, projectRoot?: string, agentId?: string, template?: PipelineTemplate) => Promise<{ runId: string }>;
+  run: (task: string, options: PipelineOptions, projectRoot?: string, agentId?: string) => Promise<{ runId: string }>;
+  resume: (runId: string) => Promise<{ runId: string }>;
   retryFix: (runId: string, suggestions: string[]) => Promise<{ runId: string }>;
   cancel: (runId?: string) => Promise<void>;
   deleteRun: (runId: string) => Promise<void>;
@@ -153,6 +183,8 @@ interface UsePipelineReturn {
   isRunning: boolean;
   getStageOutput: (runId: string, stage: string) => Promise<StageResult<any> | null>;
   getTemplates: () => Promise<PipelineTemplateConfig[]>;
+  getResumable: () => Promise<PipelineRun[]>;
+  getChildRuns: (parentRunId: string) => Promise<PipelineRun[]>;
   refreshHistory: () => Promise<void>;
 }
 
@@ -177,7 +209,7 @@ export function usePipeline(): UsePipelineReturn {
       const run = await ipcRenderer.invoke('pipeline:getRun', { runId });
       if (run) {
         setActiveRun(run);
-        if (run.status !== 'running') {
+        if (run.status !== 'running' && run.status !== 'awaiting_approval') {
           setIsRunning(false);
           if (pollInterval.current) {
             clearInterval(pollInterval.current);
@@ -221,25 +253,14 @@ export function usePipeline(): UsePipelineReturn {
     task: string,
     options: PipelineOptions,
     projectRoot?: string,
-    agentId?: string,
-    template?: PipelineTemplate
+    agentId?: string
   ) => {
     setIsRunning(true);
     const tempRunId = `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     const defaultStages = ['plan', 'action', 'review', 'validate', 'execute'];
-    let templateStages: string[] = defaultStages;
-
-    if (template) {
-      try {
-        const templates: PipelineTemplateConfig[] = await ipcRenderer.invoke('pipeline:getTemplates');
-        const found = templates.find(t => t.id === template);
-        if (found) templateStages = found.stages;
-      } catch { /* fallback to default */ }
-    }
-
     const stages: Record<string, StageResult<any>> = {};
-    for (const stage of templateStages) {
+    for (const stage of defaultStages) {
       stages[stage] = { status: 'pending', model_used: '' };
     }
 
@@ -249,8 +270,7 @@ export function usePipeline(): UsePipelineReturn {
       status: 'running',
       created_at: Date.now(),
       retry_count: 0,
-      template,
-      stage_order: templateStages,
+      stage_order: defaultStages,
       stages,
     };
 
@@ -265,7 +285,6 @@ export function usePipeline(): UsePipelineReturn {
         projectRoot,
         runId: tempRunId,
         agentId,
-        template,
       });
       return { runId: tempRunId };
     } catch (err) {
@@ -313,6 +332,28 @@ export function usePipeline(): UsePipelineReturn {
     return ipcRenderer.invoke('pipeline:getTemplates');
   }, []);
 
+  const getResumable = useCallback(async (): Promise<PipelineRun[]> => {
+    return ipcRenderer.invoke('pipeline:getResumable');
+  }, []);
+
+  const getChildRuns = useCallback(async (parentRunId: string): Promise<PipelineRun[]> => {
+    return ipcRenderer.invoke('pipeline:getChildRuns', { parentRunId });
+  }, []);
+
+  const resumeRun = useCallback(async (runId: string) => {
+    setIsRunning(true);
+    currentRunId.current = runId;
+    startPolling(runId);
+    try {
+      const result = await ipcRenderer.invoke('pipeline:resume', { runId });
+      return result;
+    } catch (err) {
+      setIsRunning(false);
+      stopPolling();
+      throw err;
+    }
+  }, [startPolling, stopPolling]);
+
   const analyzeAndRetry = useCallback(async (runId: string, userPrompt: string) => {
     setIsRunning(true);
     try {
@@ -348,6 +389,7 @@ export function usePipeline(): UsePipelineReturn {
 
   return {
     run,
+    resume: resumeRun,
     retryFix,
     cancel,
     deleteRun,
@@ -357,6 +399,8 @@ export function usePipeline(): UsePipelineReturn {
     isRunning,
     getStageOutput,
     getTemplates,
+    getResumable,
+    getChildRuns,
     refreshHistory
   };
 }

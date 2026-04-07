@@ -1,11 +1,12 @@
-import { useState, useCallback } from 'react';
-import type { StageResult, ReviewResult, CodeOutput, ExecuteResult, ValidationResult, ResearchResult, SecurityResult } from '../../hooks/usePipeline';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import type { StageResult, ReviewResult, CodeOutput, ExecuteResult, ValidationResult, ResearchResult, SecurityResult, StageStreamChunk, DecompositionResult } from '../../hooks/usePipeline';
 import './StageCard.css';
 
 interface StageCardProps {
   stage: string;
   result?: StageResult<any>;
   attempt?: number;
+  runId?: string;
 }
 
 const STAGE_LABELS: Record<string, string> = {
@@ -16,6 +17,7 @@ const STAGE_LABELS: Record<string, string> = {
   execute: 'Execute',
   research: 'Research',
   security: 'Security',
+  decompose: 'Decompose',
 };
 
 function getLanguageFromPath(filePath: string): string {
@@ -61,14 +63,35 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
   );
 }
 
-export default function StageCard({ stage, result, attempt }: StageCardProps) {
+export default function StageCard({ stage, result, attempt, runId }: StageCardProps) {
   const [showOutput, setShowOutput] = useState(false);
   const [expandedFiles, setExpandedFiles] = useState<Set<number>>(new Set([0]));
+  const [streamContent, setStreamContent] = useState('');
+  const streamRef = useRef<HTMLPreElement>(null);
   const status = result?.status || 'pending';
   const modelUsed = result?.model_used || '';
   const durationMs = result?.duration_ms;
   const output = result?.output;
   const error = result?.error;
+
+  useEffect(() => {
+    if (!runId || status !== 'running') { setStreamContent(''); return; }
+    const ipcRenderer = (window as any).ipcRenderer;
+    if (!ipcRenderer) return;
+    const handler = (_: any, data: StageStreamChunk) => {
+      if (data.runId === runId && data.stage === stage) {
+        setStreamContent(data.accumulated);
+      }
+    };
+    ipcRenderer.on('pipeline:stage_stream', handler);
+    return () => { ipcRenderer.off('pipeline:stage_stream', handler); };
+  }, [runId, stage, status]);
+
+  useEffect(() => {
+    if (streamRef.current) {
+      streamRef.current.scrollTop = streamRef.current.scrollHeight;
+    }
+  }, [streamContent]);
 
   const toggleFile = (idx: number) => {
     setExpandedFiles(prev => {
@@ -348,6 +371,38 @@ export default function StageCard({ stage, result, attempt }: StageCardProps) {
     );
   };
 
+  const renderDecomposeResults = () => {
+    if (!output || stage !== 'decompose') return null;
+    const decomp = output as DecompositionResult;
+
+    return (
+      <div className="decompose-results">
+        <div className="decompose-strategy">{decomp.strategy}</div>
+        <div className="decompose-subtasks">
+          {decomp.subtasks.map(sub => (
+            <div key={sub.id} className="decompose-subtask-card">
+              <div className="subtask-card-header">
+                <span className="subtask-id">{sub.id}</span>
+                <span className={`subtask-complexity complexity-${sub.estimated_complexity}`}>{sub.estimated_complexity}</span>
+                <span className="subtask-template-badge">{sub.template}</span>
+              </div>
+              <div className="subtask-description">{sub.description}</div>
+              {sub.agentId && (
+                <div className="subtask-agent-badge" title={sub.agentReason || ''}>
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  {sub.agentReason || sub.agentId}
+                </div>
+              )}
+              {sub.dependencies.length > 0 && (
+                <div className="subtask-deps">depends on: {sub.dependencies.join(', ')}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   const renderValidationBadge = () => {
     if (!output || stage !== 'validate') return null;
     const validationResult = output as ValidationResult;
@@ -421,7 +476,8 @@ export default function StageCard({ stage, result, attempt }: StageCardProps) {
               {renderExecuteResults()}
               {renderResearchResults()}
               {renderSecurityResults()}
-              {stage !== 'action' && stage !== 'execute' && stage !== 'validate' && stage !== 'research' && stage !== 'security' && (
+              {renderDecomposeResults()}
+              {stage !== 'action' && stage !== 'execute' && stage !== 'validate' && stage !== 'research' && stage !== 'security' && stage !== 'decompose' && (
                 <div className="output-json-container">
                   <div className="output-json-header">
                     <span>Output</span>
@@ -443,6 +499,14 @@ export default function StageCard({ stage, result, attempt }: StageCardProps) {
               )}
               {renderIssues()}
             </>
+          ) : status === 'running' && streamContent ? (
+            <div className="stage-stream-preview">
+              <div className="stream-header">
+                <span className="stream-label">Live Output</span>
+                <span className="stream-size">{streamContent.length} chars</span>
+              </div>
+              <pre className="stream-content" ref={streamRef}>{streamContent}</pre>
+            </div>
           ) : (
             <div className="no-output">
               {status === 'running' ? 'Processing...' : 'Waiting...'}

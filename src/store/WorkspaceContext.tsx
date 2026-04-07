@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { ReactNode } from 'react';
 
 export interface WorkspaceFile {
@@ -19,9 +19,11 @@ interface WorkspaceState {
 interface WorkspaceContextType {
   state: WorkspaceState;
   openFolder: () => Promise<void>;
+  openPath: (dirPath: string) => Promise<void>;
   closeFolder: () => void;
   indexWorkspace: (model: string) => Promise<{ success: boolean; indexedCount: number }>;
   searchWorkspace: (model: string, query: string, limit?: number) => Promise<any[]>;
+  refreshFilesIndex: () => Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
@@ -72,6 +74,36 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const openPath = useCallback(async (dirPath: string) => {
+    if (!dirPath || !(window as any).ipcRenderer) return;
+    try {
+      setState(prev => ({ ...prev, isIndexing: true, error: null }));
+      const ipc = (window as any).ipcRenderer;
+      const result = await ipc.invoke('fs:openPath', dirPath);
+      if (!result) {
+        setState(prev => ({ ...prev, isIndexing: false }));
+        return;
+      }
+      const { rootPath, folderName, filesIndex } = result;
+      filesIndex.sort((a: WorkspaceFile, b: WorkspaceFile) => a.path.localeCompare(b.path));
+      setState({ rootPath, folderName, filesIndex, isIndexing: false, indexingProgress: null, error: null });
+    } catch (err: any) {
+      setState(prev => ({ ...prev, isIndexing: false, error: 'Failed to open folder: ' + err.message }));
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('localmind-settings');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.defaultWorkspacePath && !state.rootPath) {
+          openPath(parsed.defaultWorkspacePath);
+        }
+      }
+    } catch { /* ignore */ }
+  }, []);
+
   const closeFolder = useCallback(() => {
     setState({
       rootPath: null,
@@ -112,6 +144,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [state.filesIndex]);
 
+  const refreshFilesIndex = useCallback(async () => {
+    if (!state.rootPath || !(window as any).ipcRenderer) return;
+    try {
+      const result = await (window as any).ipcRenderer.invoke('fs:openPath', state.rootPath);
+      if (!result) return;
+      const { filesIndex } = result;
+      filesIndex.sort((a: WorkspaceFile, b: WorkspaceFile) => a.path.localeCompare(b.path));
+      setState(prev => ({ ...prev, filesIndex }));
+    } catch (err: any) {
+      console.error('Failed to refresh files index:', err);
+    }
+  }, [state.rootPath]);
+
   const searchWorkspace = useCallback(async (model: string, query: string, limit: number = 5) => {
     if (!(window as any).ipcRenderer) throw new Error('Must run in Electron');
     try {
@@ -124,7 +169,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <WorkspaceContext.Provider value={{ state, openFolder, closeFolder, indexWorkspace, searchWorkspace }}>
+    <WorkspaceContext.Provider value={{ state, openFolder, openPath, closeFolder, indexWorkspace, searchWorkspace, refreshFilesIndex }}>
       {children}
     </WorkspaceContext.Provider>
   );
