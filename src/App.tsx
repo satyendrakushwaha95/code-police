@@ -16,7 +16,7 @@ import { useKeyboardShortcuts, SHORTCUTS_LIST } from './hooks/useKeyboardShortcu
 import { useToast, ToastContainer } from './hooks/useToast';
 import './components/SidePanel/SidePanel.css';
 
-type MainTab = 'dashboard' | 'findings' | 'report' | 'chat';
+type MainTab = 'dashboard' | 'findings' | 'report' | 'history' | 'chat';
 
 function AppContent() {
   const { state: convState, dispatch } = useConversations();
@@ -27,7 +27,6 @@ function AppContent() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
   const [activeTab, setActiveTab] = useState<MainTab>('dashboard');
   const chatInputRef = useRef<{ focus: () => void }>(null);
   const chatViewRef = useRef<{ addFileContext: (content: string, fileName: string) => void }>(null);
@@ -109,6 +108,7 @@ function AppContent() {
     { id: 'dashboard' as MainTab, label: 'Dashboard', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg> },
     { id: 'findings' as MainTab, label: 'Findings', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> },
     { id: 'report' as MainTab, label: 'Report', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> },
+    { id: 'history' as MainTab, label: 'History', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
     { id: 'chat' as MainTab, label: 'Chat', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> },
   ];
 
@@ -125,7 +125,7 @@ function AppContent() {
           onOpenDashboard={() => setActiveTab('dashboard')}
           onOpenFindings={() => setActiveTab('findings')}
           onOpenReport={() => setActiveTab('report')}
-          onOpenHistory={() => setShowHistory(!showHistory)}
+          onOpenHistory={() => setActiveTab('history')}
         />
         
         <div className="main-content">
@@ -146,6 +146,7 @@ function AppContent() {
             {activeTab === 'dashboard' && <ScanDashboard />}
             {activeTab === 'findings' && <FindingsExplorer />}
             {activeTab === 'report' && <ReportView />}
+            {activeTab === 'history' && <ScanHistory onSelectScan={() => setActiveTab('findings')} />}
             {activeTab === 'chat' && (
               <ChatView
                 ref={chatViewRef}
@@ -156,18 +157,6 @@ function AppContent() {
             )}
           </div>
         </div>
-
-        {showHistory && (
-          <div className="history-side-panel">
-            <div className="history-side-panel-header">
-              <h3>Scan History</h3>
-              <button className="btn-icon" onClick={() => setShowHistory(false)}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>
-            <ScanHistory onSelectScan={(scanId) => { setActiveTab('findings'); setShowHistory(false); }} />
-          </div>
-        )}
 
         {filePanelOpen && (
           <FilePanel
