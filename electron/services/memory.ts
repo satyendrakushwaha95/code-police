@@ -51,7 +51,7 @@ export class AgentMemoryService {
   private db: ReturnType<typeof Database>;
 
   constructor(userDataPath?: string) {
-    const dbPath = path.join(userDataPath || app.getPath('userData'), 'localmind.db');
+    const dbPath = path.join(userDataPath || app.getPath('userData'), 'codepolice.db');
     this.db = Database(dbPath);
     this.init();
   }

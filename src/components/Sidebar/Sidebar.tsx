@@ -160,7 +160,7 @@ export default function Sidebar({
           </button>
         </div>
         <div className="sidebar-brand">
-          <img src={HeaderLogo} alt="LocalMind Logo" className="brand-icon" />
+          <img src={HeaderLogo} alt="Code Police" className="brand-icon" />
         </div>
         <button className="btn-icon" onClick={onToggleCollapse} title="Collapse sidebar">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>

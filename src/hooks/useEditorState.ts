@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'localmind-editor-state';
+const STORAGE_KEY = 'codepolice-editor-state';
 
 interface PersistedTab {
   path: string;

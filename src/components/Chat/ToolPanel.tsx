@@ -175,7 +175,7 @@ export default function ToolPanel({}: ToolPanelProps) {
                   <button 
                     className="btn btn-ghost btn-sm"
                     onClick={() => {
-                      const event = new CustomEvent('localmind:insertCode', { 
+                      const event = new CustomEvent('codepolice:insertCode', { 
                         detail: { code: result.output || result.error || '', filename: `${result.toolName}_result.txt` } 
                       });
                       document.dispatchEvent(event);

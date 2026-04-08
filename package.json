@@ -1,5 +1,5 @@
 {
-  "name": "localmind-ai",
+  "name": "code-police",
   "private": true,
   "version": "3.0.0",
   "main": "dist-electron/main.js",
@@ -50,8 +50,8 @@
     "vite-plugin-electron-renderer": "^0.14.6"
   },
   "build": {
-    "appId": "com.localmind.ai",
-    "productName": "LocalMind AI",
+    "appId": "com.codepolice.app",
+    "productName": "Code Police",
     "directories": {
       "output": "release"
     },

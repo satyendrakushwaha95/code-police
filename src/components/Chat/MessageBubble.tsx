@@ -237,7 +237,7 @@ export default function MessageBubble({
 
       <div className="message-body">
         <div className="message-header">
-          <span className="message-role">{role === 'user' ? 'You' : 'LocalMind'}</span>
+          <span className="message-role">{role === 'user' ? 'You' : 'Code Police'}</span>
           <span className="message-time">{timeStr}</span>
           {role === 'assistant' && !isStreaming && content.length > 50 && (
             <div className="view-mode-toggle">

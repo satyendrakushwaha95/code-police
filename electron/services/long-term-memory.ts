@@ -57,7 +57,7 @@ export class LongTermMemory {
   private embeddingModel: string = 'nomic-embed-text:latest';
 
   constructor(userDataPath?: string) {
-    const dbPath = path.join(userDataPath || app.getPath('userData'), 'localmind.db');
+    const dbPath = path.join(userDataPath || app.getPath('userData'), 'codepolice.db');
     this.db = Database(dbPath);
     this.embeddings = new OllamaEmbeddingsService();
     this.init();

@@ -45,7 +45,7 @@ function AppContent() {
 
   useKeyboardShortcuts({
     onNewChat: () => {
-      document.dispatchEvent(new CustomEvent('localmind:newchat'));
+      document.dispatchEvent(new CustomEvent('codepolice:newchat'));
       setActiveTab('chat');
     },
     onToggleSidebar: () => setSidebarCollapsed(prev => !prev),
@@ -54,7 +54,7 @@ function AppContent() {
     onFocusInput: () => { setActiveTab('chat'); chatInputRef.current?.focus(); },
     onShowShortcuts: () => setShowShortcuts(prev => !prev),
     onSemanticSearch: () => {
-      document.dispatchEvent(new CustomEvent('localmind:semanticsearch'));
+      document.dispatchEvent(new CustomEvent('codepolice:semanticsearch'));
     },
     onToggleTerminal: () => setShowTerminal(prev => !prev),
   });
@@ -80,9 +80,9 @@ function AppContent() {
 
   useEffect(() => {
     const handlers: Record<string, () => void> = {
-      'localmind:openSettings': () => setShowSettings(true),
-      'localmind:openTerminal': () => setShowTerminal(true),
-      'localmind:openUsage': () => setShowUsage(true),
+      'codepolice:openSettings': () => setShowSettings(true),
+      'codepolice:openTerminal': () => setShowTerminal(true),
+      'codepolice:openUsage': () => setShowUsage(true),
     };
     const entries = Object.entries(handlers);
     entries.forEach(([event, handler]) => document.addEventListener(event, handler));
@@ -211,7 +211,7 @@ function AppContent() {
               case 'terminal': setShowTerminal(true); break;
               case 'agents': setShowAgentPanel(true); break;
               case 'onboard': {
-                document.dispatchEvent(new CustomEvent('localmind:onboard'));
+                document.dispatchEvent(new CustomEvent('codepolice:onboard'));
                 break;
               }
               case 'usage': setShowUsage(true); break;

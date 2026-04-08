@@ -93,7 +93,7 @@ Respond ONLY as JSON (no other text):
     try {
       const original = fs.readFileSync(absPath, 'utf-8');
 
-      const backupDir = path.join(projectRoot, '.localmind-backups');
+      const backupDir = path.join(projectRoot, '.codepolice-backups');
       if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
       const backupName = `${path.basename(finding.filePath)}.${Date.now()}.bak`;
       const backupPath = path.join(backupDir, backupName);
@@ -120,7 +120,7 @@ Respond ONLY as JSON (no other text):
           findingId: finding.id,
           filePath: finding.filePath,
           success: true,
-          backupPath: `.localmind-backups/${backupName}`,
+          backupPath: `.codepolice-backups/${backupName}`,
         };
       }
 

@@ -94,7 +94,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('localmind-settings');
+      const stored = localStorage.getItem('codepolice-settings');
       if (stored) {
         const parsed = JSON.parse(stored);
         if (parsed.defaultWorkspacePath && !state.rootPath) {

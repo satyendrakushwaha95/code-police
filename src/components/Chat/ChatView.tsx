@@ -72,8 +72,8 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
     const handler = () => {
       dispatch({ type: 'CREATE_CONVERSATION', payload: { model: settings.model } });
     };
-    document.addEventListener('localmind:newchat', handler);
-    return () => document.removeEventListener('localmind:newchat', handler);
+    document.addEventListener('codepolice:newchat', handler);
+    return () => document.removeEventListener('codepolice:newchat', handler);
   }, [dispatch, settings.model]);
 
   // Listen for semantic search event from keyboard shortcuts
@@ -81,8 +81,8 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
     const handler = () => {
       setShowSemanticSearch(true);
     };
-    document.addEventListener('localmind:semanticsearch', handler);
-    return () => document.removeEventListener('localmind:semanticsearch', handler);
+    document.addEventListener('codepolice:semanticsearch', handler);
+    return () => document.removeEventListener('codepolice:semanticsearch', handler);
   }, []);
 
   // Listen for prompt enhancer insertion
@@ -93,8 +93,8 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
         setPendingPrompt(customEvent.detail.prompt);
       }
     };
-    document.addEventListener('localmind:insertPrompt', handler);
-    return () => document.removeEventListener('localmind:insertPrompt', handler);
+    document.addEventListener('codepolice:insertPrompt', handler);
+    return () => document.removeEventListener('codepolice:insertPrompt', handler);
   }, []);
 
   // Auto-send pending prompt when conversation is ready
@@ -196,11 +196,11 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
         // Handle UI panel openers
         if (cmdResult.uiAction) {
           const actionMap: Record<string, () => void> = {
-            designdoc: () => document.dispatchEvent(new CustomEvent('localmind:openDesignDoc')),
-            settings: () => document.dispatchEvent(new CustomEvent('localmind:openSettings')),
+            designdoc: () => document.dispatchEvent(new CustomEvent('codepolice:openDesignDoc')),
+            settings: () => document.dispatchEvent(new CustomEvent('codepolice:openSettings')),
             files: () => onOpenFilePanel?.(),
-            terminal: () => document.dispatchEvent(new CustomEvent('localmind:openTerminal')),
-            usage: () => document.dispatchEvent(new CustomEvent('localmind:openUsage')),
+            terminal: () => document.dispatchEvent(new CustomEvent('codepolice:openTerminal')),
+            usage: () => document.dispatchEvent(new CustomEvent('codepolice:openUsage')),
             new_chat: () => dispatch({ type: 'CREATE_CONVERSATION', payload: { model: settings.model } }),
           };
           const action = actionMap[cmdResult.uiAction];
@@ -638,7 +638,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
 
           <div className="dashboard-content">
             <div className="dashboard-logo" onClick={handleLogoClick}>
-            <img src={HeaderLogo} alt="LocalMind AI" className="dashboard-logo-img" />
+            <img src={HeaderLogo} alt="Code Police" className="dashboard-logo-img" />
           </div>
 
           <form className="dashboard-search" onSubmit={handleSearchSubmit}>

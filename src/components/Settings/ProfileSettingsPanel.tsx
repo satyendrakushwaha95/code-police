@@ -110,7 +110,7 @@ export default function ProfileSettingsPanel() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `localmind-memory-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `codepolice-memory-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
     showToast('Memory exported', 'success');

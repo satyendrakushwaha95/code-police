@@ -1,6 +1,6 @@
 const STORAGE_KEYS = {
-  CONVERSATIONS: 'localmind_conversations',
-  SETTINGS: 'localmind_settings',
+  CONVERSATIONS: 'codepolice_conversations',
+  SETTINGS: 'codepolice_settings',
 } as const;
 
 export function saveToStorage<T>(key: string, data: T): void {
