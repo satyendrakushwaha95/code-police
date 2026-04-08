@@ -10,7 +10,6 @@ import { routeCommand } from '../../services/command-router';
 import type { Message, FileAttachment, OllamaChatMessage } from '../../types/chat';
 import { v4 as uuidv4 } from 'uuid';
 import MessageBubble from './MessageBubble';
-import HeaderLogo from '../../header-logo.png';
 import ChatInput from './ChatInput';
 import SemanticSearchModal from './SemanticSearchModal';
 
@@ -637,8 +636,9 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
 
           <div className="dashboard-content">
             <div className="dashboard-logo" onClick={handleLogoClick}>
-            <img src={HeaderLogo} alt="Code Police" className="dashboard-logo-img" />
-          </div>
+              <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="var(--accent)" strokeWidth="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              <h2 style={{ margin: '8px 0 0', fontSize: '20px', fontWeight: 700, color: 'var(--text-primary)' }}>Code Police</h2>
+            </div>
 
           <form className="dashboard-search" onSubmit={handleSearchSubmit}>
             <textarea

@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react';
 import { useConversations } from '../../store/ConversationContext';
 import { useSettings } from '../../store/SettingsContext';
 import { formatTimestamp, truncateText } from '../../utils/helpers';
-import HeaderLogo from '../../header-logo.png';
 import './Sidebar.css';
 
 interface SidebarProps {
@@ -156,7 +155,8 @@ export default function Sidebar({
           </button>
         </div>
         <div className="sidebar-brand">
-          <img src={HeaderLogo} alt="Code Police" className="brand-icon" />
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="var(--accent)" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span className="brand-name">Code Police</span>
         </div>
         <button className="btn-icon" onClick={onToggleCollapse} title="Collapse sidebar">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 18l-6-6 6-6"/></svg>

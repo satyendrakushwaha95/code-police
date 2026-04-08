@@ -59,15 +59,19 @@
   flex: 1;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 8px;
   padding: 0 8px;
 }
 
-.brand-icon {
-  height: 36px;
-  width: auto;
-  max-width: 100%;
-  object-fit: contain;
+.sidebar-brand svg {
+  flex-shrink: 0;
+}
+
+.brand-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
 }
 
 /* ─── New Chat button (fixed) ───────────────────────────────────────────────── */
