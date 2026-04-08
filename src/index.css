@@ -284,6 +284,28 @@ input:focus, textarea:focus, select:focus {
   position: relative;
 }
 
+/* ── Chat Overlay Panel ── */
+.chat-overlay-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 440px;
+  max-width: 100vw;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-xl);
+  animation: chat-slide-in var(--transition-normal) ease-out;
+}
+
+@keyframes chat-slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
 
 /* ═══════════════════════════════════
    Buttons

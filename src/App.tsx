@@ -16,7 +16,7 @@ import { useKeyboardShortcuts, SHORTCUTS_LIST } from './hooks/useKeyboardShortcu
 import { useToast, ToastContainer } from './hooks/useToast';
 import './components/SidePanel/SidePanel.css';
 
-type MainTab = 'dashboard' | 'findings' | 'report' | 'history' | 'chat';
+type MainTab = 'dashboard' | 'findings' | 'report' | 'history';
 
 function AppContent() {
   const { state: convState, dispatch } = useConversations();
@@ -27,6 +27,7 @@ function AppContent() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
+  const [showChat, setShowChat] = useState(false);
   const [activeTab, setActiveTab] = useState<MainTab>('dashboard');
   const chatInputRef = useRef<{ focus: () => void }>(null);
   const chatViewRef = useRef<{ addFileContext: (content: string, fileName: string) => void }>(null);
@@ -40,12 +41,12 @@ function AppContent() {
   useKeyboardShortcuts({
     onNewChat: () => {
       document.dispatchEvent(new CustomEvent('codepolice:newchat'));
-      setActiveTab('chat');
+      setShowChat(true);
     },
     onToggleSidebar: () => setSidebarCollapsed(prev => !prev),
     onToggleFilePanel: () => setFilePanelOpen(prev => !prev),
     onOpenSettings: () => setShowSettings(true),
-    onFocusInput: () => { setActiveTab('chat'); chatInputRef.current?.focus(); },
+    onFocusInput: () => { setShowChat(true); chatInputRef.current?.focus(); },
     onShowShortcuts: () => setShowShortcuts(prev => !prev),
     onSemanticSearch: () => {
       document.dispatchEvent(new CustomEvent('codepolice:semanticsearch'));
@@ -109,7 +110,6 @@ function AppContent() {
     { id: 'findings' as MainTab, label: 'Findings', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> },
     { id: 'report' as MainTab, label: 'Report', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg> },
     { id: 'history' as MainTab, label: 'History', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> },
-    { id: 'chat' as MainTab, label: 'Chat', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> },
   ];
 
   return (
@@ -120,7 +120,7 @@ function AppContent() {
           isCollapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
           onToggleFilePanel={() => setFilePanelOpen(!filePanelOpen)}
-          onOpenChat={() => setActiveTab('chat')}
+          onOpenChat={() => setShowChat(true)}
           onOpenUsage={() => setShowUsage(true)}
           onOpenDashboard={() => setActiveTab('dashboard')}
           onOpenFindings={() => setActiveTab('findings')}
@@ -147,16 +147,19 @@ function AppContent() {
             {activeTab === 'findings' && <FindingsExplorer />}
             {activeTab === 'report' && <ReportView />}
             {activeTab === 'history' && <ScanHistory onSelectScan={() => setActiveTab('findings')} />}
-            {activeTab === 'chat' && (
-              <ChatView
-                ref={chatViewRef}
-                inputRef={chatInputRef}
-                onCloseChat={() => setActiveTab('dashboard')}
-                onOpenFilePanel={() => setFilePanelOpen(true)}
-              />
-            )}
           </div>
         </div>
+
+        {showChat && (
+          <div className="chat-overlay-panel">
+            <ChatView
+              ref={chatViewRef}
+              inputRef={chatInputRef}
+              onCloseChat={() => setShowChat(false)}
+              onOpenFilePanel={() => setFilePanelOpen(true)}
+            />
+          </div>
+        )}
 
         {filePanelOpen && (
           <FilePanel
@@ -177,7 +180,7 @@ function AppContent() {
           onAction={(action, payload) => {
             setShowCommandPalette(false);
             switch (action) {
-              case 'new_chat': dispatch({ type: 'CREATE_CONVERSATION', payload: { model: settings.model } }); setActiveTab('chat'); break;
+              case 'new_chat': dispatch({ type: 'CREATE_CONVERSATION', payload: { model: settings.model } }); setShowChat(true); break;
               case 'scan': setActiveTab('dashboard'); break;
               case 'findings': setActiveTab('findings'); break;
               case 'report': setActiveTab('report'); break;
@@ -192,7 +195,7 @@ function AppContent() {
               case 'switch_conversation':
                 if (payload) {
                   dispatch({ type: 'SET_ACTIVE', payload });
-                  setActiveTab('chat');
+                  setShowChat(true);
                 }
                 break;
             }
