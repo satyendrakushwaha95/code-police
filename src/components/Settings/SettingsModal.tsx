@@ -2,16 +2,25 @@ import { useState, useEffect } from 'react';
 import { useSettings } from '../../store/SettingsContext';
 import { ollamaService } from '../../services/ollama';
 import type { OllamaModel } from '../../types/chat';
-import RoutingSettingsPanel from './RoutingSettingsPanel';
 import ProviderSettingsPanel from './ProviderSettingsPanel';
-import ProfileSettingsPanel from './ProfileSettingsPanel';
+import { useModelRouter, type TaskCategory } from '../../hooks/useModelRouter';
+import { useToast } from '../../hooks/useToast';
 import './Settings.css';
 
-type SettingsTab = 'general' | 'profile' | 'providers' | 'modelrouter';
+type SettingsTab = 'general' | 'providers';
 
 interface SettingsModalProps {
   onClose: () => void;
 }
+
+const ROUTE_LABELS: Record<string, string> = {
+  code_generation: 'Fix Generation',
+  review: 'Security Review',
+  planning: 'Scan Analysis',
+  chat_general: 'Chat',
+};
+
+const ACTIVE_ROUTES: TaskCategory[] = ['code_generation', 'review', 'planning', 'chat_general'];
 
 export default function SettingsModal({ onClose }: SettingsModalProps) {
   const { settings, updateSettings, resetSettings } = useSettings();
@@ -20,6 +29,18 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
   const [loadingModels, setLoadingModels] = useState(false);
   const [connectionOk, setConnectionOk] = useState<boolean | null>(null);
   const [tempEndpoint, setTempEndpoint] = useState(settings.endpoint);
+  const { showToast } = useToast();
+
+  const {
+    config: routerConfig,
+    availableModels,
+    loading: routerLoading,
+    setRoute,
+    saveConfig,
+    refreshModels: refreshRouterModels,
+  } = useModelRouter();
+
+  const [routerDirty, setRouterDirty] = useState(false);
 
   useEffect(() => {
     fetchModels();
@@ -50,11 +71,22 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
         updateSettings({ endpoint: tempEndpoint });
         const m = await ollamaService.listModels();
         setModels(m);
+        refreshRouterModels();
       }
     } catch {
       setConnectionOk(false);
     } finally {
       setLoadingModels(false);
+    }
+  };
+
+  const handleSaveRouter = async () => {
+    const result = await saveConfig();
+    if (result.success) {
+      showToast('Model routing saved', 'success');
+      setRouterDirty(false);
+    } else {
+      showToast(`Error: ${result.errors.join(', ')}`, 'error');
     }
   };
 
@@ -71,42 +103,31 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
     <div className="modal-overlay" onClick={handleOverlayClick}>
       <div className="modal-content settings-modal wide-modal">
         <div className="modal-header">
-          <h2>⚙️ Settings</h2>
+          <h2>Settings</h2>
           <button className="btn-icon" onClick={onClose}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
 
         <div className="settings-tabs">
-          <button 
+          <button
             className={`settings-tab ${activeTab === 'general' ? 'active' : ''}`}
             onClick={() => setActiveTab('general')}
           >
             General
           </button>
-          <button 
-            className={`settings-tab ${activeTab === 'profile' ? 'active' : ''}`}
-            onClick={() => setActiveTab('profile')}
-          >
-            Profile & Memory
-          </button>
-          <button 
+          <button
             className={`settings-tab ${activeTab === 'providers' ? 'active' : ''}`}
             onClick={() => setActiveTab('providers')}
           >
             Providers
-          </button>
-          <button 
-            className={`settings-tab ${activeTab === 'modelrouter' ? 'active' : ''}`}
-            onClick={() => setActiveTab('modelrouter')}
-          >
-            Model Router
           </button>
         </div>
 
         <div className="modal-body">
           {activeTab === 'general' && (
           <>
+            {/* Connection */}
             <div className="settings-section">
               <h3 className="section-title">Connection</h3>
               <div className="form-group">
@@ -131,6 +152,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
               </div>
             </div>
 
+            {/* Models */}
             <div className="settings-section">
               <h3 className="section-title">Models</h3>
               <div className="form-group">
@@ -166,17 +188,56 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                     </option>
                   ))}
                 </select>
-                <p className="hint">Model used for semantic search (use nomic-embed-text or mxbai-embed-large)</p>
+                <p className="hint">Model used for semantic code search during scans</p>
               </div>
 
               {models.length === 0 && !loadingModels && (
-                <p className="hint error">⚠️ No models found. Make sure Ollama is running and you have models pulled.</p>
+                <p className="hint error">No models found. Make sure Ollama is running and you have models pulled.</p>
               )}
             </div>
 
+            {/* Scan Model Routing */}
             <div className="settings-section">
-              <h3 className="section-title">Parameters</h3>
+              <h3 className="section-title">Scan Model Routing</h3>
+              <p className="hint" style={{ marginBottom: 12 }}>Choose which model to use for each scan task. Falls back to Chat Model if not set.</p>
 
+              {routerLoading ? (
+                <p className="hint">Loading routing config...</p>
+              ) : routerConfig ? (
+                <>
+                  {ACTIVE_ROUTES.map(category => {
+                    const route = routerConfig.routes[category];
+                    if (!route) return null;
+                    return (
+                      <div className="form-group" key={category}>
+                        <label>{ROUTE_LABELS[category] || category}</label>
+                        <select
+                          value={route.model}
+                          onChange={(e) => { setRoute(category, e.target.value); setRouterDirty(true); }}
+                          className="model-input model-select"
+                        >
+                          {availableModels.map(m => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                          {!availableModels.includes(route.model) && route.model && (
+                            <option value={route.model}>{route.model} (not installed)</option>
+                          )}
+                        </select>
+                      </div>
+                    );
+                  })}
+                  {routerDirty && (
+                    <button className="btn btn-primary btn-sm" onClick={handleSaveRouter} style={{ marginTop: 8 }}>
+                      Save Routing
+                    </button>
+                  )}
+                </>
+              ) : null}
+            </div>
+
+            {/* LLM Parameters */}
+            <div className="settings-section">
+              <h3 className="section-title">LLM Parameters</h3>
               <div className="form-group">
                 <label>Temperature</label>
                 <div className="range-slider">
@@ -190,87 +251,25 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                   />
                   <span className="range-value">{settings.temperature.toFixed(1)}</span>
                 </div>
-                <p className="hint">Lower = more focused, Higher = more creative</p>
-              </div>
-
-              <div className="form-group">
-                <label>Top P</label>
-                <div className="range-slider">
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={settings.topP}
-                    onChange={(e) => updateSettings({ topP: parseFloat(e.target.value) })}
-                  />
-                  <span className="range-value">{settings.topP.toFixed(2)}</span>
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label>Context Length</label>
-                <div className="range-slider">
-                  <input
-                    type="range"
-                    min="1024"
-                    max="131072"
-                    step="1024"
-                    value={settings.contextLength}
-                    onChange={(e) => updateSettings({ contextLength: parseInt(e.target.value) })}
-                  />
-                  <span className="range-value">{settings.contextLength >= 1024 ? `${(settings.contextLength / 1024).toFixed(0)}K` : settings.contextLength}</span>
-                </div>
+                <p className="hint">Lower = more focused analysis, Higher = more creative responses</p>
               </div>
             </div>
 
+            {/* System Prompt */}
             <div className="settings-section">
-              <h3 className="section-title">Default Workspace</h3>
-              <div className="form-group">
-                <label>Default Project Directory</label>
-                <p className="form-hint">Set a default project directory so scans start automatically without manually opening a folder each time.</p>
-                <div className="endpoint-row">
-                  <input
-                    type="text"
-                    value={settings.defaultWorkspacePath || ''}
-                    onChange={(e) => updateSettings({ defaultWorkspacePath: e.target.value })}
-                    placeholder="e.g., D:\Projects\my-app"
-                  />
-                  <button
-                    className="btn btn-secondary"
-                    onClick={async () => {
-                      try {
-                        const result = await (window as any).ipcRenderer?.invoke('dialog:openDirectoryPath');
-                        if (result) {
-                          updateSettings({ defaultWorkspacePath: result });
-                        }
-                      } catch {
-                        const result = await (window as any).ipcRenderer?.invoke('dialog:openDirectory');
-                        if (result?.rootPath) {
-                          updateSettings({ defaultWorkspacePath: result.rootPath });
-                        }
-                      }
-                    }}
-                  >
-                    Browse
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="settings-section">
-              <h3 className="section-title">System Prompt</h3>
+              <h3 className="section-title">Chat System Prompt</h3>
               <div className="form-group">
                 <textarea
                   value={settings.systemPrompt}
                   onChange={(e) => updateSettings({ systemPrompt: e.target.value })}
-                  rows={4}
-                  placeholder="Enter a system prompt..."
+                  rows={3}
+                  placeholder="Enter a system prompt for the chat assistant..."
                   className="system-prompt-textarea"
                 />
               </div>
             </div>
 
+            {/* Appearance */}
             <div className="settings-section">
               <h3 className="section-title">Appearance</h3>
               <div className="form-group">
@@ -280,13 +279,13 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
                     className={`theme-btn ${settings.theme === 'dark' ? 'active' : ''}`}
                     onClick={() => updateSettings({ theme: 'dark' })}
                   >
-                    🌙 Dark
+                    Dark
                   </button>
                   <button
                     className={`theme-btn ${settings.theme === 'light' ? 'active' : ''}`}
                     onClick={() => updateSettings({ theme: 'light' })}
                   >
-                    ☀️ Light
+                    Light
                   </button>
                 </div>
               </div>
@@ -294,16 +293,8 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
           </>
           )}
 
-          {activeTab === 'profile' && (
-            <ProfileSettingsPanel />
-          )}
-
           {activeTab === 'providers' && (
             <ProviderSettingsPanel />
-          )}
-
-          {activeTab === 'modelrouter' && (
-            <RoutingSettingsPanel onClose={() => {}} embedded={true} />
           )}
         </div>
 

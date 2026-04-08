@@ -95,12 +95,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const stored = localStorage.getItem('codepolice-settings');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.defaultWorkspacePath && !state.rootPath) {
-          openPath(parsed.defaultWorkspacePath);
-        }
-      }
+      // Auto-open removed — users open projects from the dashboard
     } catch { /* ignore */ }
   }, []);
 

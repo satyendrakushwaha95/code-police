@@ -7,7 +7,6 @@ export interface AppSettings {
   contextLength: number;
   theme: 'dark' | 'light';
   systemPrompt: string;
-  defaultWorkspacePath: string;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -19,5 +18,4 @@ export const DEFAULT_SETTINGS: AppSettings = {
   contextLength: 4096,
   theme: 'dark',
   systemPrompt: 'You are a security-focused AI assistant for Code Police. Help developers understand vulnerabilities, explain security concepts, and suggest fixes.',
-  defaultWorkspacePath: '',
 };
