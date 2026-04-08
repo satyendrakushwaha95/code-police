@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHand
 import { useConversations } from '../../store/ConversationContext';
 import { useSettings } from '../../store/SettingsContext';
 import { useWorkspace } from '../../store/WorkspaceContext';
-import { useAgents } from '../../store/AgentContext';
+
 import { ollamaService } from '../../services/ollama';
 import { buildContextFromAttachments } from '../../services/fileReader';
 import { calculateContextWindow } from '../../utils/contextWindow';
@@ -35,7 +35,6 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
   const { settings } = useSettings();
   const { showToast } = useToast();
   const { state: workspace } = useWorkspace();
-  const { state: agentState } = useAgents();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const chatInputRef = useRef<{ focus: () => void }>(null);
@@ -754,22 +753,6 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
 
         <div className="messages-area">
           {activeConversation.messages.length === 0 && (() => {
-            const activeAgent = agentState.activeAgent;
-            const starters = activeAgent?.conversationStarters?.filter(s => s.trim());
-            if (starters && starters.length > 0) {
-              return (
-                <div className="chat-starters">
-                  <span className="chat-starters-label">{activeAgent?.icon} {activeAgent?.name} — Try one of these:</span>
-                  <div className="chat-starters-grid">
-                    {starters.map((s, i) => (
-                      <button key={i} className="chat-starter-chip" onClick={() => sendMessage(s, [])}>
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            }
             return (
               <div className="empty-chat">
                 <p className="empty-hint">Type a message to start the conversation</p>

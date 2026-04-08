@@ -10,8 +10,6 @@ interface SidebarProps {
   isCollapsed: boolean;
   onToggleCollapse: () => void;
   onToggleFilePanel?: () => void;
-  onToggleTerminal?: () => void;
-  onOpenAgentPanel?: () => void;
   onOpenChat?: () => void;
   onOpenUsage?: () => void;
   onOpenDashboard?: () => void;
@@ -25,8 +23,6 @@ export default function Sidebar({
   isCollapsed, 
   onToggleCollapse,
   onToggleFilePanel,
-  onToggleTerminal,
-  onOpenAgentPanel,
   onOpenChat,
   onOpenUsage,
   onOpenDashboard,
@@ -209,14 +205,6 @@ export default function Sidebar({
               <button className="sidebar-menu-item" onClick={onOpenChat}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
                 Chat
-              </button>
-              <button className="sidebar-menu-item" onClick={onToggleTerminal}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
-                Terminal
-              </button>
-              <button className="sidebar-menu-item" onClick={onOpenAgentPanel}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4m10-10h-4M6 12H2"/></svg>
-                Scan Agents
               </button>
               <button className="sidebar-menu-item" onClick={onOpenUsage}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12V7H5a2 2 0 010-4h14v4"/><path d="M3 5v14a2 2 0 002 2h16v-5"/><path d="M18 12a2 2 0 000 4h4v-4z"/></svg>

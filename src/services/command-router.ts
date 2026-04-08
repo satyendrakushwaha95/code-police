@@ -9,7 +9,6 @@
 const ipcRenderer = (window as any).ipcRenderer;
 
 export type CommandIntent =
-  | 'terminal'
   | 'git_status'
   | 'git_log'
   | 'git_commit'
@@ -25,8 +24,6 @@ export type CommandIntent =
   | 'open_report'
   | 'open_settings'
   | 'open_files'
-  | 'open_terminal'
-  | 'open_agents'
   | 'open_usage'
   | 'new_chat'
   | 'none';
@@ -49,7 +46,6 @@ interface IntentPattern {
 
 const INTENT_PATTERNS: IntentPattern[] = [
   // ── Slash commands (highest priority) ──
-  { intent: 'terminal', patterns: [/^\/run\s+(.+)/i, /^\/exec\s+(.+)/i, /^\/shell\s+(.+)/i, /^\$\s*(.+)/] },
   { intent: 'git_status', patterns: [/^\/git\s+status$/i] },
   { intent: 'git_log', patterns: [/^\/git\s+log$/i, /^\/git\s+log\s+(\d+)$/i] },
   { intent: 'git_diff', patterns: [/^\/git\s+diff$/i] },
@@ -62,8 +58,6 @@ const INTENT_PATTERNS: IntentPattern[] = [
   { intent: 'open_report', patterns: [/^\/report$/i] },
   { intent: 'open_settings', patterns: [/^\/settings$/i, /^\/config$/i] },
   { intent: 'open_files', patterns: [/^\/files$/i, /^\/explorer$/i] },
-  { intent: 'open_terminal', patterns: [/^\/terminal$/i, /^\/term$/i] },
-  { intent: 'open_agents', patterns: [/^\/agents$/i] },
   { intent: 'open_usage', patterns: [/^\/usage$/i, /^\/costs$/i] },
   { intent: 'new_chat', patterns: [/^\/new$/i, /^\/clear$/i] },
   { intent: 'onboard', patterns: [/^\/onboard$/i, /^\/analyze$/i] },
@@ -71,22 +65,6 @@ const INTENT_PATTERNS: IntentPattern[] = [
   { intent: 'recall', patterns: [/^\/recall$/i, /^\/memories$/i, /^\/memory$/i] },
 
   // ── Natural language patterns ──
-  { intent: 'terminal', patterns: [
-    /^run\s+(.+)/i,
-    /^execute\s+(.+)/i,
-    /^install\s+([\w@\-\/\.]+)/i,
-    /^npm\s+(.+)/i,
-    /^yarn\s+(.+)/i,
-    /^pnpm\s+(.+)/i,
-    /^pip\s+(.+)/i,
-    /^python\s+(.+)/i,
-    /^node\s+(.+)/i,
-    /^npx\s+(.+)/i,
-    /^cargo\s+(.+)/i,
-    /^go\s+(run|build|test|mod)\s*(.*)/i,
-    /^docker\s+(.+)/i,
-    /^make\s*(.*)/i,
-  ]},
   { intent: 'git_status', patterns: [
     /^(what('?s|\s+is)\s+the\s+)?git\s+status/i,
     /^show\s+(me\s+)?(the\s+)?git\s+status/i,
@@ -157,17 +135,6 @@ function detectIntent(input: string): { intent: CommandIntent; match: RegExpMatc
 
 function extractCommand(input: string, intent: CommandIntent, match: RegExpMatchArray): string {
   switch (intent) {
-    case 'terminal': {
-      // For "run X", "execute X", extract X. For "npm test", use whole input.
-      if (/^(run|execute|\/run|\/exec|\/shell|\$)\s+/i.test(input.trim())) {
-        return input.trim().replace(/^(\/run|\/exec|\/shell|\$|run|execute)\s+/i, '').trim();
-      }
-      // For "install express", prepend npm
-      if (/^install\s+/i.test(input.trim())) {
-        return `npm install ${input.trim().replace(/^install\s+/i, '')}`;
-      }
-      return input.trim();
-    }
     case 'git_commit': {
       const commitMatch = input.match(/(?:commit|save\s+(?:my\s+)?changes)\s*(?:with\s+message\s+|as\s+|with\s+)?["']?(.+?)["']?$/i);
       return commitMatch?.[1] || 'Auto-commit';
@@ -212,8 +179,6 @@ export async function routeCommand(
     open_report: 'report',
     open_settings: 'settings',
     open_files: 'files',
-    open_terminal: 'terminal',
-    open_agents: 'agents',
     open_usage: 'usage',
     new_chat: 'new_chat',
   };
@@ -271,18 +236,6 @@ export async function routeCommand(
           displayMessage = `**My Memories** (${memories.length})\n\n${lines.join('\n')}`;
         }
         return { intent, executed: true, originalInput: input, displayMessage };
-      }
-
-      case 'terminal': {
-        result = await ipcRenderer.invoke('tools:execute', 'execute_command', {
-          command,
-          cwd: workspacePath || process.cwd?.() || '.',
-        });
-        displayMessage = `**\`$ ${command}\`**\n\n${result.success
-          ? `\`\`\`\n${result.output || '(no output)'}\n\`\`\``
-          : `**Error:**\n\`\`\`\n${result.error || result.output || 'Command failed'}\n\`\`\``
-        }`;
-        break;
       }
 
       case 'git_status': {
@@ -382,8 +335,6 @@ export async function routeCommand(
 
 export function getSlashCommandHints(): Array<{ command: string; description: string }> {
   return [
-    { command: '/run <command>', description: 'Execute a terminal command' },
-    { command: '$ <command>', description: 'Execute a terminal command (shorthand)' },
     { command: '/git status', description: 'Show git status' },
     { command: '/git log', description: 'Show recent commits' },
     { command: '/git diff', description: 'Show changes' },
@@ -396,7 +347,6 @@ export function getSlashCommandHints(): Array<{ command: string; description: st
     { command: '/report', description: 'Open report' },
     { command: '/settings', description: 'Open settings' },
     { command: '/usage', description: 'View usage & costs' },
-    { command: '/agents', description: 'Manage agents' },
     { command: '/onboard', description: 'Analyze & onboard current project' },
     { command: '/remember <fact>', description: 'Store a memory' },
     { command: '/recall', description: 'Show all memories' },

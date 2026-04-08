@@ -1,14 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { ConversationProvider, useConversations } from './store/ConversationContext';
 import { SettingsProvider, useSettings } from './store/SettingsContext';
-import { AgentProvider } from './store/AgentContext';
 import { ScanProvider } from './store/ScanContext';
 import Sidebar from './components/Sidebar/Sidebar';
 import ChatView from './components/Chat/ChatView';
 import SettingsModal from './components/Settings/SettingsModal';
 import FilePanel from './components/FilePanel/FilePanel';
-import TerminalPanel from './components/Terminal/TerminalPanel';
-import AgentPanel from './components/Agent/AgentPanel';
 import UsageDashboard from './components/Usage/UsageDashboard';
 import CommandPalette from './components/CommandPalette/CommandPalette';
 import ScanDashboard from './components/ScanDashboard/ScanDashboard';
@@ -25,11 +22,9 @@ function AppContent() {
   const { state: convState, dispatch } = useConversations();
   const { settings } = useSettings();
   const [showSettings, setShowSettings] = useState(false);
-  const [showAgentPanel, setShowAgentPanel] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [filePanelOpen, setFilePanelOpen] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [showTerminal, setShowTerminal] = useState(false);
   const [showUsage, setShowUsage] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -56,7 +51,7 @@ function AppContent() {
     onSemanticSearch: () => {
       document.dispatchEvent(new CustomEvent('codepolice:semanticsearch'));
     },
-    onToggleTerminal: () => setShowTerminal(prev => !prev),
+    onToggleTerminal: () => {},
   });
 
   useEffect(() => {
@@ -81,7 +76,6 @@ function AppContent() {
   useEffect(() => {
     const handlers: Record<string, () => void> = {
       'codepolice:openSettings': () => setShowSettings(true),
-      'codepolice:openTerminal': () => setShowTerminal(true),
       'codepolice:openUsage': () => setShowUsage(true),
     };
     const entries = Object.entries(handlers);
@@ -126,10 +120,8 @@ function AppContent() {
           isCollapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
           onToggleFilePanel={() => setFilePanelOpen(!filePanelOpen)}
-          onToggleTerminal={() => setShowTerminal(!showTerminal)}
           onOpenChat={() => setActiveTab('chat')}
           onOpenUsage={() => setShowUsage(true)}
-          onOpenAgentPanel={() => setShowAgentPanel(true)}
           onOpenDashboard={() => setActiveTab('dashboard')}
           onOpenFindings={() => setActiveTab('findings')}
           onOpenReport={() => setActiveTab('report')}
@@ -184,14 +176,7 @@ function AppContent() {
             onAddContext={handleAddContext}
           />
         )}
-        {showTerminal && (
-          <TerminalPanel onClose={() => setShowTerminal(false)} />
-        )}
       </div>
-
-      {showAgentPanel && (
-        <AgentPanel onClose={() => setShowAgentPanel(false)} />
-      )}
 
       {showUsage && (
         <UsageDashboard onClose={() => setShowUsage(false)} />
@@ -208,8 +193,6 @@ function AppContent() {
               case 'findings': setActiveTab('findings'); break;
               case 'report': setActiveTab('report'); break;
               case 'files': setFilePanelOpen(true); break;
-              case 'terminal': setShowTerminal(true); break;
-              case 'agents': setShowAgentPanel(true); break;
               case 'onboard': {
                 document.dispatchEvent(new CustomEvent('codepolice:onboard'));
                 break;
@@ -261,15 +244,13 @@ import { WorkspaceProvider } from './store/WorkspaceContext';
 export default function App() {
   return (
     <SettingsProvider>
-      <AgentProvider>
-        <ConversationProvider>
-          <WorkspaceProvider>
-            <ScanProvider>
-              <AppContent />
-            </ScanProvider>
-          </WorkspaceProvider>
-        </ConversationProvider>
-      </AgentProvider>
+      <ConversationProvider>
+        <WorkspaceProvider>
+          <ScanProvider>
+            <AppContent />
+          </ScanProvider>
+        </WorkspaceProvider>
+      </ConversationProvider>
     </SettingsProvider>
   );
 }

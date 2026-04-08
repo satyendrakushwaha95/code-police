@@ -9,8 +9,6 @@ import { AgentMemoryService } from './services/memory';
 import { getRoutingConfigStore, RoutingConfig, TaskCategory } from './services/routing-config';
 import { getModelRouter, RoutingDecision } from './services/model-router';
 // Pipeline imports removed — replaced by scan system
-import { getAgentManager } from './services/agent-manager';
-import { CreateAgentInput, UpdateAgentInput, AGENT_PRESETS } from './services/agent-types';
 import { getProviderRegistry } from './services/providers/provider-registry';
 import { ProviderConfig, PROVIDER_PRESETS } from './services/providers/provider-types';
 import { getUsageTracker } from './services/usage-tracker';
@@ -89,9 +87,6 @@ app.whenReady().then(async () => {
         win.webContents.send('router:configChanged');
       }
     });
-
-    const agentManager = getAgentManager();
-    agentManager.initialize();
 
     const providerRegistry = getProviderRegistry();
     console.log('[Main] Provider registry initialized with', providerRegistry.getEnabledProviderIds().length, 'providers');
@@ -511,62 +506,6 @@ ipcMain.handle('routing:updateConfig', async (_, updates: Partial<RoutingConfig>
   const updated = { ...current, ...updates };
   routingConfigStore.save(updated);
   return { success: true };
-});
-
-// Agent Management IPC Handlers
-ipcMain.handle('agent:list', async () => {
-  const agentManager = getAgentManager();
-  return agentManager.getAll();
-});
-
-ipcMain.handle('agent:get', async (_, id: string) => {
-  const agentManager = getAgentManager();
-  return agentManager.getById(id);
-});
-
-ipcMain.handle('agent:create', async (_, input: CreateAgentInput) => {
-  const agentManager = getAgentManager();
-  return agentManager.create(input);
-});
-
-ipcMain.handle('agent:update', async (_, id: string, input: UpdateAgentInput) => {
-  const agentManager = getAgentManager();
-  return agentManager.update(id, input);
-});
-
-ipcMain.handle('agent:delete', async (_, id: string) => {
-  const agentManager = getAgentManager();
-  return agentManager.delete(id);
-});
-
-ipcMain.handle('agent:clone', async (_, id: string, newName: string) => {
-  const agentManager = getAgentManager();
-  return agentManager.clone(id, newName);
-});
-
-ipcMain.handle('agent:getPresets', async () => {
-  return AGENT_PRESETS;
-});
-
-ipcMain.handle('agent:export', async (_, id: string) => {
-  const agentManager = getAgentManager();
-  return agentManager.export(id);
-});
-
-ipcMain.handle('agent:import', async (_, json: string) => {
-  const agentManager = getAgentManager();
-  return agentManager.import(json);
-});
-
-ipcMain.handle('agent:setActive', async (_, id: string | null) => {
-  const agentManager = getAgentManager();
-  agentManager.setActive(id);
-  return { success: true };
-});
-
-ipcMain.handle('agent:getActive', async () => {
-  const agentManager = getAgentManager();
-  return agentManager.getActive();
 });
 
 // ─── Provider Management IPC Handlers ────────────────────────────────────────
