@@ -121,16 +121,29 @@ function AppContent() {
         
         <div className="main-content">
           <div className="main-tab-bar">
-            {tabConfig.map(tab => (
-              <button
-                key={tab.id}
-                className={`main-tab ${activeTab === tab.id ? 'active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                <span className="main-tab-icon">{tab.icon}</span>
-                <span className="main-tab-label">{tab.label}</span>
+            <div className="main-tab-bar-tabs">
+              {tabConfig.map(tab => (
+                <button
+                  key={tab.id}
+                  className={`main-tab ${activeTab === tab.id ? 'active' : ''}`}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  <span className="main-tab-icon">{tab.icon}</span>
+                  <span className="main-tab-label">{tab.label}</span>
+                </button>
+              ))}
+            </div>
+            <div className="win-controls">
+              <button className="win-btn win-minimize" onClick={() => (window as any).ipcRenderer?.send('window:minimize')} title="Minimize">
+                <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg>
               </button>
-            ))}
+              <button className="win-btn win-maximize" onClick={() => (window as any).ipcRenderer?.send('window:maximize')} title="Maximize">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1"><rect x="0.5" y="0.5" width="9" height="9"/></svg>
+              </button>
+              <button className="win-btn win-close" onClick={() => (window as any).ipcRenderer?.send('window:close')} title="Close">
+                <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.2"><line x1="0" y1="0" x2="10" y2="10"/><line x1="10" y1="0" x2="0" y2="10"/></svg>
+              </button>
+            </div>
           </div>
 
           <div className="main-tab-content">

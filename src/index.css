@@ -229,12 +229,53 @@ input:focus, textarea:focus, select:focus {
 /* ── Main Tab Bar ── */
 .main-tab-bar {
   display: flex;
-  gap: 2px;
-  padding: 6px 12px;
+  align-items: stretch;
+  justify-content: space-between;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   -webkit-app-region: drag;
+}
+
+.main-tab-bar-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 12px;
+}
+
+/* ── Windows Title Bar Controls ── */
+.win-controls {
+  display: flex;
+  -webkit-app-region: no-drag;
+}
+
+.win-btn {
+  width: 46px;
+  height: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.1s;
+  -webkit-app-region: no-drag;
+}
+
+.win-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.win-btn.win-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+.win-btn svg {
+  flex-shrink: 0;
 }
 
 .main-tab {

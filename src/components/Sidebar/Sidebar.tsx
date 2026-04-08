@@ -110,17 +110,6 @@ export default function Sidebar({
     return (
       <aside className="sidebar sidebar-collapsed" ref={sidebarRef} style={{ width: '56px' }}>
         <div className="sidebar-collapsed-actions">
-          <div className="window-controls window-controls-collapsed">
-            <button className="window-btn close" onClick={() => (window as any).ipcRenderer?.send('window:close')} title="Close">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-            <button className="window-btn minimize" onClick={() => (window as any).ipcRenderer?.send('window:minimize')} title="Minimize">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            </button>
-            <button className="window-btn maximize" onClick={() => (window as any).ipcRenderer?.send('window:maximize')} title="Maximize">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
-            </button>
-          </div>
           <button className="btn-icon" onClick={onToggleCollapse} title="Expand sidebar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
           </button>
@@ -141,17 +130,6 @@ export default function Sidebar({
       <div className="sidebar-resize-handle" onMouseDown={startResize} />
 
       <div className="sidebar-header">
-        <div className="window-controls">
-          <button className="window-btn close" onClick={() => (window as any).ipcRenderer?.send('window:close')} title="Close">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
-          <button className="window-btn minimize" onClick={() => (window as any).ipcRenderer?.send('window:minimize')} title="Minimize">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          </button>
-          <button className="window-btn maximize" onClick={() => (window as any).ipcRenderer?.send('window:maximize')} title="Maximize">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
-          </button>
-        </div>
         <div className="sidebar-brand">
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="var(--accent)" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           <span className="brand-name">Code Police</span>
