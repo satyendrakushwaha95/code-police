@@ -35,7 +35,6 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
     { id: 'scan', label: 'Scan Dashboard', description: 'Security scan overview', icon: '🔍', category: 'action', action: () => onAction('scan') },
     { id: 'findings', label: 'Findings', icon: '🛡️', category: 'action', action: () => onAction('findings') },
     { id: 'report', label: 'Report', icon: '📑', category: 'action', action: () => onAction('report') },
-    { id: 'files', label: 'File Explorer', icon: '📂', category: 'action', action: () => onAction('files') },
     { id: 'onboard', label: 'Onboard Project', description: 'Analyze & understand current project', icon: '📋', category: 'action', action: () => onAction('onboard') },
     { id: 'usage', label: 'Usage & Costs', icon: '📊', category: 'action', action: () => onAction('usage') },
     { id: 'settings', label: 'Settings', icon: '⚙️', category: 'action', action: () => onAction('settings') },

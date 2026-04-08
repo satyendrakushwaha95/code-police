@@ -8,7 +8,6 @@ interface SidebarProps {
   onOpenSettings: () => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
-  onToggleFilePanel?: () => void;
   onOpenChat?: () => void;
   onOpenUsage?: () => void;
   onOpenDashboard?: () => void;
@@ -21,7 +20,6 @@ export default function Sidebar({
   onOpenSettings, 
   isCollapsed, 
   onToggleCollapse,
-  onToggleFilePanel,
   onOpenChat,
   onOpenUsage,
   onOpenDashboard,
@@ -198,10 +196,6 @@ export default function Sidebar({
 
               <div className="sidebar-divider" />
 
-              <button className="sidebar-menu-item" onClick={onToggleFilePanel}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
-                File Explorer
-              </button>
               <button className="sidebar-menu-item" onClick={onOpenChat}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
                 Chat
