@@ -359,6 +359,16 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
       )}
 
       <div className="input-main-row">
+        <button
+          className="btn-icon attach-btn"
+          onClick={() => fileInputRef.current?.click()}
+          title="Attach files"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+          </svg>
+        </button>
+
         <div className="input-wrapper">
           {showSlashMenu && filteredSlashHints.length > 0 && (
             <ul className="mention-dropdown slash-dropdown">
@@ -396,12 +406,56 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             onPaste={handleSmartPaste}
-            placeholder={isDragOver ? 'Drop files here...' : 'Message, / for commands, $ for shell, @ for files...'}
+            placeholder={isDragOver ? 'Drop files here...' : 'Ask about security, vulnerabilities, or your code...'}
             className="chat-textarea"
             rows={1}
             disabled={disabled}
           />
         </div>
+
+        <div className="model-picker-wrapper">
+          <button className="model-badge model-badge-btn" onClick={openModelPicker} title="Click to change model">
+            <span className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></span>
+            <span className="model-badge-name">{modelDisplayName}</span>
+            <svg className="model-badge-chevron" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          {showModelPicker && (
+            <div className="model-picker-dropdown">
+              <div className="model-picker-header">
+                <span>Select Model</span>
+                {activeModel && (
+                  <button className="model-picker-reset" onClick={() => { onModelChange?.(null); setShowModelPicker(false); }}>
+                    Reset to default
+                  </button>
+                )}
+              </div>
+              {loadingModels && <div className="model-picker-loading">Loading models...</div>}
+              {!loadingModels && Object.keys(groupedModels).length === 0 && (
+                <div className="model-picker-loading">No models available. Check Settings → Providers.</div>
+              )}
+              {Object.entries(groupedModels).map(([provider, models]) => (
+                <div key={provider} className="model-picker-group">
+                  <div className="model-picker-group-label">{provider}</div>
+                  {models.map(m => (
+                    <button
+                      key={`${m.providerId}::${m.id}`}
+                      className={`model-picker-item ${activeModel?.model === m.id && activeModel?.providerId === m.providerId ? 'active' : ''}`}
+                      onClick={() => { onModelChange?.({ providerId: m.providerId, model: m.id }); setShowModelPicker(false); }}
+                    >
+                      <span className="model-picker-item-name">{m.name}</span>
+                      {m.size && (
+                        <span className="model-picker-item-size">
+                          {m.size > 1e9 ? `${(m.size / 1e9).toFixed(1)}GB` : `${Math.round(m.size / 1e6)}MB`}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {isStreaming ? (
           <button className="btn-icon stop-btn" onClick={onStop} title="Stop generating">
             <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
@@ -416,65 +470,6 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
           </button>
         )}
-      </div>
-
-      <div className="input-actions-row">
-        <div className="input-actions-left">
-          <button
-            className="btn-icon attach-btn"
-            onClick={() => fileInputRef.current?.click()}
-            title="Attach files"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
-            </svg>
-          </button>
-          {attachments.length > 0 && (
-            <span className="attachment-count">{attachments.length} file(s)</span>
-          )}
-          <div className="model-picker-wrapper">
-            <button className="model-badge model-badge-btn" onClick={openModelPicker} title="Click to change model">
-              <span className={`status-dot ${connected ? 'connected' : 'disconnected'}`}></span>
-              <span className="model-badge-name">{modelDisplayName}</span>
-              <svg className="model-badge-chevron" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M6 9l6 6 6-6"/></svg>
-            </button>
-            {showModelPicker && (
-              <div className="model-picker-dropdown">
-                <div className="model-picker-header">
-                  <span>Select Model</span>
-                  {activeModel && (
-                    <button className="model-picker-reset" onClick={() => { onModelChange?.(null); setShowModelPicker(false); }}>
-                      Reset to default
-                    </button>
-                  )}
-                </div>
-                {loadingModels && <div className="model-picker-loading">Loading models...</div>}
-                {!loadingModels && Object.keys(groupedModels).length === 0 && (
-                  <div className="model-picker-loading">No models available. Check Settings → Providers.</div>
-                )}
-                {Object.entries(groupedModels).map(([provider, models]) => (
-                  <div key={provider} className="model-picker-group">
-                    <div className="model-picker-group-label">{provider}</div>
-                    {models.map(m => (
-                      <button
-                        key={`${m.providerId}::${m.id}`}
-                        className={`model-picker-item ${activeModel?.model === m.id && activeModel?.providerId === m.providerId ? 'active' : ''}`}
-                        onClick={() => { onModelChange?.({ providerId: m.providerId, model: m.id }); setShowModelPicker(false); }}
-                      >
-                        <span className="model-picker-item-name">{m.name}</span>
-                        {m.size && (
-                          <span className="model-picker-item-size">
-                            {m.size > 1e9 ? `${(m.size / 1e9).toFixed(1)}GB` : `${Math.round(m.size / 1e6)}MB`}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
       <input

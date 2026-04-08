@@ -2330,24 +2330,6 @@
 }
 
 /* Actions row - attachments, mode buttons */
-.input-actions-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 4px 0;
-}
-
-.input-actions-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.input-actions-right {
-  display: flex;
-  gap: 6px;
-}
-
 .attach-btn {
   color: var(--text-tertiary);
   flex-shrink: 0;
