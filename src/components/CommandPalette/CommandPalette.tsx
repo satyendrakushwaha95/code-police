@@ -32,11 +32,9 @@ export default function CommandPalette({ onClose, onAction }: CommandPaletteProp
 
   const actions: PaletteItem[] = [
     { id: 'new-chat', label: 'New Chat', icon: '💬', category: 'action', action: () => onAction('new_chat') },
-    { id: 'codegen', label: 'Code Generator', icon: '⚡', category: 'action', action: () => onAction('codegen') },
-    { id: 'refactor', label: 'Refactor Code', icon: '🔧', category: 'action', action: () => onAction('refactor') },
-    { id: 'designdoc', label: 'Design Document', icon: '📄', category: 'action', action: () => onAction('designdoc') },
-    { id: 'pipeline', label: 'Task Pipeline', icon: '🔄', category: 'action', action: () => onAction('pipeline') },
-    { id: 'compare', label: 'Compare Models', icon: '⚖️', category: 'action', action: () => onAction('compare') },
+    { id: 'scan', label: 'Scan Dashboard', description: 'Security scan overview', icon: '🔍', category: 'action', action: () => onAction('scan') },
+    { id: 'findings', label: 'Findings', icon: '🛡️', category: 'action', action: () => onAction('findings') },
+    { id: 'report', label: 'Report', icon: '📑', category: 'action', action: () => onAction('report') },
     { id: 'files', label: 'File Explorer', icon: '📂', category: 'action', action: () => onAction('files') },
     { id: 'terminal', label: 'Terminal', icon: '🖥️', category: 'action', action: () => onAction('terminal') },
     { id: 'agents', label: 'Manage Agents', icon: '🤖', category: 'action', action: () => onAction('agents') },

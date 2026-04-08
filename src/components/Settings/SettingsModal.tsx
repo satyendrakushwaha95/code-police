@@ -228,7 +228,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
               <h3 className="section-title">Default Workspace</h3>
               <div className="form-group">
                 <label>Default Project Directory</label>
-                <p className="form-hint">Set a default workspace so "Send to Agent" works without manually opening a folder each time.</p>
+                <p className="form-hint">Set a default project directory so scans start automatically without manually opening a folder each time.</p>
                 <div className="endpoint-row">
                   <input
                     type="text"

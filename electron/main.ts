@@ -8,10 +8,7 @@ import { registerToolHandlers } from './services/tools';
 import { AgentMemoryService } from './services/memory';
 import { getRoutingConfigStore, RoutingConfig, TaskCategory } from './services/routing-config';
 import { getModelRouter, RoutingDecision } from './services/model-router';
-import { getPipelineStateStore } from './services/pipeline-state';
-import { getPipelineOrchestrator } from './services/pipeline-orchestrator';
-import { PipelineOptions, PipelineStage, PipelineTemplate } from './services/pipeline-types';
-import { PIPELINE_TEMPLATES } from './services/pipeline-templates';
+// Pipeline imports removed — replaced by scan system
 import { getAgentManager } from './services/agent-manager';
 import { CreateAgentInput, UpdateAgentInput, AGENT_PRESETS } from './services/agent-types';
 import { getProviderRegistry } from './services/providers/provider-registry';
@@ -19,6 +16,10 @@ import { ProviderConfig, PROVIDER_PRESETS } from './services/providers/provider-
 import { getUsageTracker } from './services/usage-tracker';
 import { getLongTermMemory } from './services/long-term-memory';
 import { runOnboarding, formatOnboardingReport } from './services/project-onboarding';
+import { getScanOrchestrator } from './services/scan-orchestrator';
+import { ScanConfig, FindingFilters, FindingStatus, ReportOptions } from './services/scan-types';
+import { SCAN_PROFILES } from './services/scan-profiles';
+import { getReportGenerator } from './services/report-generator';
 
 process.env.APP_ROOT = path.join(__dirname, '..');
 
@@ -164,6 +165,15 @@ ipcMain.handle('fs:openPath', async (_, dirPath: string) => {
   } catch {
     return null;
   }
+});
+
+ipcMain.handle('dialog:showSaveDialog', async (_, options: { title?: string; defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }) => {
+  if (!win) return { canceled: true };
+  return dialog.showSaveDialog(win, {
+    title: options.title,
+    defaultPath: options.defaultPath,
+    filters: options.filters,
+  });
 });
 
 ipcMain.handle('dialog:openDirectoryPath', async () => {
@@ -489,138 +499,6 @@ ipcMain.handle('ollama:checkConnection', async () => {
   }
 });
 
-// Pipeline IPC Handlers
-ipcMain.handle('pipeline:getTemplates', async () => {
-  return PIPELINE_TEMPLATES;
-});
-
-ipcMain.handle('pipeline:resume', async (_, { runId }: { runId: string }) => {
-  const stateStore = getPipelineStateStore();
-  const orchestrator = getPipelineOrchestrator(stateStore, vectorDB || undefined);
-  return orchestrator.resume(runId);
-});
-
-ipcMain.handle('pipeline:getResumable', async () => {
-  const stateStore = getPipelineStateStore();
-  return stateStore.getResumableRuns();
-});
-
-ipcMain.handle('pipeline:getChildRuns', async (_, { parentRunId }: { parentRunId: string }) => {
-  const stateStore = getPipelineStateStore();
-  return stateStore.getChildRuns(parentRunId);
-});
-
-ipcMain.handle('pipeline:run', async (_, payload: {
-  task: string;
-  options: PipelineOptions;
-  projectRoot?: string;
-  runId?: string;
-  agentId?: string;
-  template?: PipelineTemplate;
-}) => {
-  const { task, options, projectRoot, runId, agentId, template } = payload;
-  try {
-    console.log('[Pipeline] Starting pipeline run:', task, agentId ? `with agent ${agentId}` : '', template ? `template: ${template}` : '');
-    
-    const stateStore = getPipelineStateStore();
-    console.log('[Pipeline] State store initialized');
-    
-    const orchestrator = getPipelineOrchestrator(stateStore, vectorDB || undefined);
-    console.log('[Pipeline] Orchestrator initialized');
-    
-    if (projectRoot) {
-      orchestrator.setProjectRoot(projectRoot);
-    }
-    
-    if (agentId) {
-      orchestrator.setActiveAgent(agentId);
-    }
-    
-    const result = await orchestrator.run(task, options, undefined, runId, template);
-    console.log('[Pipeline] Run completed:', result.runId);
-    return result;
-  } catch (err) {
-    console.error('[Pipeline] Error during run:', err);
-    throw err;
-  }
-});
-
-ipcMain.handle('pipeline:cancel', async (_, { runId }: { runId: string }) => {
-  const orchestrator = getPipelineOrchestrator();
-  orchestrator.cancel(runId);
-  return { ok: true };
-});
-
-ipcMain.handle('pipeline:getHistory', async () => {
-  const stateStore = getPipelineStateStore();
-  return stateStore.getRunHistory();
-});
-
-ipcMain.handle('pipeline:getRun', async (_, { runId }: { runId: string }) => {
-  const stateStore = getPipelineStateStore();
-  return stateStore.getRun(runId);
-});
-
-ipcMain.handle('pipeline:deleteRun', async (_, { runId }: { runId: string }) => {
-  const stateStore = getPipelineStateStore();
-  await stateStore.deleteRun(runId);
-  return { success: true };
-});
-
-ipcMain.handle('pipeline:getStageOutput', async (_, { runId, stage }: { runId: string; stage: string }) => {
-  const stateStore = getPipelineStateStore();
-  return stateStore.getStageOutput(runId, stage);
-});
-
-// Pipeline Analytics IPC Handlers
-ipcMain.handle('pipeline:analytics:getSummary', async (_, { fromTimestamp, toTimestamp }: { fromTimestamp?: number; toTimestamp?: number }) => {
-  const stateStore = getPipelineStateStore();
-  return stateStore.getAnalyticsSummary(fromTimestamp, toTimestamp);
-});
-
-ipcMain.handle('pipeline:analytics:getByTemplate', async (_, { fromTimestamp, toTimestamp }: { fromTimestamp?: number; toTimestamp?: number }) => {
-  const stateStore = getPipelineStateStore();
-  return stateStore.getAnalyticsByTemplate(fromTimestamp, toTimestamp);
-});
-
-ipcMain.handle('pipeline:analytics:getByStage', async (_, { fromTimestamp, toTimestamp }: { fromTimestamp?: number; toTimestamp?: number }) => {
-  const stateStore = getPipelineStateStore();
-  return stateStore.getBottleneckStages(fromTimestamp, toTimestamp);
-});
-
-ipcMain.handle('pipeline:analytics:getByModel', async (_, { fromTimestamp, toTimestamp }: { fromTimestamp?: number; toTimestamp?: number }) => {
-  const stateStore = getPipelineStateStore();
-  return stateStore.getModelPerformance(fromTimestamp, toTimestamp);
-});
-
-ipcMain.handle('pipeline:retryFix', async (_, { runId, suggestions }: { runId: string; suggestions: string[] }) => {
-  const stateStore = getPipelineStateStore();
-  const orchestrator = getPipelineOrchestrator(stateStore, vectorDB || undefined);
-  
-  const result = await orchestrator.retryFix(runId, suggestions);
-  return result;
-});
-
-ipcMain.handle('pipeline:analyzeAndRetry', async (_, { runId, userPrompt }: { runId: string; userPrompt: string }) => {
-  const stateStore = getPipelineStateStore();
-  const orchestrator = getPipelineOrchestrator(stateStore, vectorDB || undefined);
-  
-  const result = await orchestrator.analyzeAndRetry(runId, userPrompt);
-  return result;
-});
-
-ipcMain.handle('pipeline:approve', async (_, { runId }: { runId: string }) => {
-  const orchestrator = getPipelineOrchestrator();
-  await orchestrator.handleApproval(runId, 'approve');
-  return { ok: true };
-});
-
-ipcMain.handle('pipeline:reject', async (_, { runId }: { runId: string }) => {
-  const orchestrator = getPipelineOrchestrator();
-  await orchestrator.handleApproval(runId, 'reject');
-  return { ok: true };
-});
-
 // Routing Config IPC Handlers
 ipcMain.handle('routing:getConfig', async () => {
   const routingConfigStore = getRoutingConfigStore();
@@ -886,82 +764,6 @@ ipcMain.on('chat:abort', (_, streamId: string) => {
   }
 });
 
-// ─── Multi-Model Comparison Streaming ────────────────────────────────────────
-
-ipcMain.handle('compare:stream', async (_, payload: {
-  comparisonId: string;
-  models: Array<{ providerId: string; model: string }>;
-  messages: Array<{ role: string; content: string }>;
-  options?: { temperature?: number; top_p?: number; max_tokens?: number };
-}) => {
-  const { comparisonId, models, messages, options } = payload;
-  const registry = getProviderRegistry();
-  const controllers: AbortController[] = [];
-
-  for (const entry of models) {
-    const controller = new AbortController();
-    controllers.push(controller);
-    const streamKey = `${comparisonId}:${entry.providerId}:${entry.model}`;
-    activeStreams.set(streamKey, controller);
-
-    // Each model streams independently in parallel
-    (async () => {
-      const startTime = Date.now();
-      try {
-        for await (const chunk of registry.chatStream(
-          entry.providerId,
-          entry.model,
-          messages.map(m => ({ role: m.role as 'system' | 'user' | 'assistant', content: m.content })),
-          options,
-          controller.signal
-        )) {
-          const windows = BrowserWindow.getAllWindows();
-          for (const w of windows) {
-            if (!w.isDestroyed()) {
-              w.webContents.send('compare:chunk', {
-                comparisonId,
-                providerId: entry.providerId,
-                model: entry.model,
-                content: chunk.content,
-                done: chunk.done,
-                usage: chunk.usage,
-                durationMs: Date.now() - startTime,
-              });
-            }
-          }
-          if (chunk.done) break;
-        }
-      } catch (err: any) {
-        if (err.name === 'AbortError') return;
-        const windows = BrowserWindow.getAllWindows();
-        for (const w of windows) {
-          if (!w.isDestroyed()) {
-            w.webContents.send('compare:error', {
-              comparisonId,
-              providerId: entry.providerId,
-              model: entry.model,
-              error: err.message || String(err),
-            });
-          }
-        }
-      } finally {
-        activeStreams.delete(streamKey);
-      }
-    })();
-  }
-
-  return { comparisonId, modelCount: models.length };
-});
-
-ipcMain.on('compare:abort', (_, comparisonId: string) => {
-  for (const [key, controller] of activeStreams.entries()) {
-    if (key.startsWith(`${comparisonId}:`)) {
-      controller.abort();
-      activeStreams.delete(key);
-    }
-  }
-});
-
 // ─── Usage Tracking IPC Handlers ─────────────────────────────────────────────
 
 ipcMain.handle('usage:getSummary', async (_, { from, to }: { from?: number; to?: number }) => {
@@ -1108,4 +910,76 @@ ipcMain.handle('project:onboard', async (_, { rootPath }: { rootPath: string }) 
     report,
     formatted: formatOnboardingReport(report),
   };
+});
+
+// ─── Security Scan IPC Handlers ─────────────────────────────────────────────
+
+ipcMain.handle('scan:start', async (_, config: ScanConfig) => {
+  const orchestrator = getScanOrchestrator();
+  if (vectorDB) orchestrator.setVectorDB(vectorDB);
+  const scanId = `scan_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  orchestrator.startScan(config, scanId).catch(err => {
+    console.error('[Scan] Background scan failed:', err);
+  });
+  return { scanId };
+});
+
+ipcMain.handle('scan:stop', async (_, scanId: string) => {
+  getScanOrchestrator().stopScan(scanId);
+});
+
+ipcMain.handle('scan:getStatus', async (_, scanId: string) => {
+  return getScanOrchestrator().getScanStatus(scanId);
+});
+
+ipcMain.handle('scan:getResults', async (_, scanId: string) => {
+  return getScanOrchestrator().getScanResults(scanId);
+});
+
+ipcMain.handle('scan:getHistory', async (_, { projectRoot, limit }: { projectRoot: string; limit?: number }) => {
+  return getScanOrchestrator().getHistory(projectRoot, limit);
+});
+
+ipcMain.handle('scan:deleteScan', async (_, scanId: string) => {
+  getScanOrchestrator().deleteScan(scanId);
+});
+
+ipcMain.handle('scan:compareScan', async (_, { scanIdA, scanIdB }: { scanIdA: string; scanIdB: string }) => {
+  return getScanOrchestrator().compareScan(scanIdA, scanIdB);
+});
+
+ipcMain.handle('scan:getFindings', async (_, { scanId, filters }: { scanId: string; filters?: FindingFilters }) => {
+  return getScanOrchestrator().getFindings(scanId, filters);
+});
+
+ipcMain.handle('scan:getFinding', async (_, findingId: string) => {
+  return getScanOrchestrator().getFinding(findingId);
+});
+
+ipcMain.handle('scan:updateFinding', async (_, { findingId, status }: { findingId: string; status: FindingStatus }) => {
+  getScanOrchestrator().updateFindingStatus(findingId, status);
+});
+
+ipcMain.handle('scan:generateFix', async (_, findingId: string) => {
+  return getScanOrchestrator().generateFix(findingId);
+});
+
+ipcMain.handle('scan:applyFix', async (_, findingId: string) => {
+  return getScanOrchestrator().applyFix(findingId);
+});
+
+ipcMain.handle('scan:getProfiles', async () => {
+  return SCAN_PROFILES;
+});
+
+ipcMain.handle('scan:getReportTrend', async (_, { projectRoot, limit }: { projectRoot: string; limit?: number }) => {
+  return getScanOrchestrator().getTrend(projectRoot, limit);
+});
+
+ipcMain.handle('scan:generateReport', async (_, options: ReportOptions) => {
+  return getReportGenerator().generate(options);
+});
+
+ipcMain.handle('scan:getReportData', async (_, scanId: string) => {
+  return getReportGenerator().getReportData(scanId);
 });

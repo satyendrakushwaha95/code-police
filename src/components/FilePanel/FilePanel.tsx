@@ -264,7 +264,7 @@ export default function FilePanel({ isOpen, onClose, onAddContext }: FilePanelPr
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const { state: workspace, indexWorkspace, searchWorkspace, refreshFilesIndex } = useWorkspace();
+  const { state: workspace, indexWorkspace, searchWorkspace } = useWorkspace();
   const { settings } = useSettings();
 
   const handleSearch = async (e: React.KeyboardEvent) => {
@@ -328,22 +328,6 @@ export default function FilePanel({ isOpen, onClose, onAddContext }: FilePanelPr
     onAddContext(contextText, `${result.relativeFilePath}:${result.startLine}`);
     showToast(`Added ${result.relativeFilePath} to context`, 'success');
   };
-
-  // --- Pipeline Integration: auto-refresh file tree ---
-
-  useEffect(() => {
-    const ipc = (window as any).ipcRenderer;
-    if (!ipc) return;
-
-    const handlePipelineComplete = () => {
-      if (workspace.rootPath) {
-        refreshFilesIndex();
-      }
-    };
-
-    ipc.on('pipeline:complete', handlePipelineComplete);
-    return () => ipc.off('pipeline:complete', handlePipelineComplete);
-  }, [workspace.rootPath, refreshFilesIndex]);
 
   // --- Session Persistence: restore on mount ---
 
@@ -555,7 +539,7 @@ export default function FilePanel({ isOpen, onClose, onAddContext }: FilePanelPr
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
                   Use as Context
                 </button>
-                <button className="btn btn-ghost" onClick={handleSendToAgent} title="Send to active agent pipeline">
+                <button className="btn btn-ghost" onClick={handleSendToAgent} title="Send file to agent context">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/>
                   </svg>

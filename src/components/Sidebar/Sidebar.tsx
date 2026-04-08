@@ -9,32 +9,30 @@ interface SidebarProps {
   onOpenSettings: () => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
-  onOpenCodeGen?: () => void;
-  onOpenRefactor?: () => void;
-  onOpenDesignDoc?: () => void;
-  onOpenPromptEnhancer?: () => void;
   onToggleFilePanel?: () => void;
   onToggleTerminal?: () => void;
-  onOpenPipelinePanel?: () => void;
   onOpenAgentPanel?: () => void;
   onOpenChat?: () => void;
   onOpenUsage?: () => void;
+  onOpenDashboard?: () => void;
+  onOpenFindings?: () => void;
+  onOpenReport?: () => void;
+  onOpenHistory?: () => void;
 }
 
 export default function Sidebar({ 
   onOpenSettings, 
   isCollapsed, 
   onToggleCollapse,
-  onOpenCodeGen,
-  onOpenRefactor,
-  onOpenDesignDoc,
-  onOpenPromptEnhancer,
   onToggleFilePanel,
   onToggleTerminal,
-  onOpenPipelinePanel,
   onOpenAgentPanel,
   onOpenChat,
   onOpenUsage,
+  onOpenDashboard,
+  onOpenFindings,
+  onOpenReport,
+  onOpenHistory,
 }: SidebarProps) {
   const { state, dispatch } = useConversations();
   const { settings } = useSettings();
@@ -185,21 +183,21 @@ export default function Sidebar({
           </div>
           {menuOpen && (
             <div className="sidebar-section-items">
-              <button className="sidebar-menu-item" onClick={onOpenCodeGen}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-                Code Generator
+              <button className="sidebar-menu-item" onClick={onOpenDashboard}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+                Scan Dashboard
               </button>
-              <button className="sidebar-menu-item" onClick={onOpenRefactor}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-                Code Refactor
+              <button className="sidebar-menu-item" onClick={onOpenFindings}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Findings
               </button>
-              <button className="sidebar-menu-item" onClick={onOpenDesignDoc}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                Design Docs
+              <button className="sidebar-menu-item" onClick={onOpenReport}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                Scan Report
               </button>
-              <button className="sidebar-menu-item" onClick={onOpenPromptEnhancer}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/><path d="M20 3v4h-4"/></svg>
-                Prompt Enhancer
+              <button className="sidebar-menu-item" onClick={onOpenHistory}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Scan History
               </button>
 
               <div className="sidebar-divider" />
@@ -208,17 +206,17 @@ export default function Sidebar({
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
                 File Explorer
               </button>
+              <button className="sidebar-menu-item" onClick={onOpenChat}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+                Chat
+              </button>
               <button className="sidebar-menu-item" onClick={onToggleTerminal}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
                 Terminal
               </button>
               <button className="sidebar-menu-item" onClick={onOpenAgentPanel}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4m10-10h-4M6 12H2"/></svg>
-                Agents
-              </button>
-              <button className="sidebar-menu-item" onClick={onOpenPipelinePanel}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                Task Pipeline
+                Scan Agents
               </button>
               <button className="sidebar-menu-item" onClick={onOpenUsage}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12V7H5a2 2 0 010-4h14v4"/><path d="M3 5v14a2 2 0 002 2h16v-5"/><path d="M18 12a2 2 0 000 4h4v-4z"/></svg>

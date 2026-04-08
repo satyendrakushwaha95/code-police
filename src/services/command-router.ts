@@ -20,16 +20,14 @@ export type CommandIntent =
   | 'remember'
   | 'recall'
   | 'onboard'
-  | 'open_codegen'
-  | 'open_refactor'
-  | 'open_designdoc'
-  | 'open_pipeline'
+  | 'open_scan'
+  | 'open_findings'
+  | 'open_report'
   | 'open_settings'
   | 'open_files'
   | 'open_terminal'
   | 'open_agents'
   | 'open_usage'
-  | 'open_compare'
   | 'new_chat'
   | 'none';
 
@@ -59,18 +57,16 @@ const INTENT_PATTERNS: IntentPattern[] = [
   { intent: 'search_code', patterns: [/^\/search\s+(.+)/i, /^\/grep\s+(.+)/i, /^\/find\s+(.+)/i] },
   { intent: 'read_file', patterns: [/^\/cat\s+(.+)/i, /^\/read\s+(.+)/i, /^\/open\s+file\s+(.+)/i] },
   { intent: 'list_dir', patterns: [/^\/ls$/i, /^\/ls\s+(.+)/i, /^\/dir$/i, /^\/dir\s+(.+)/i] },
-  { intent: 'open_codegen', patterns: [/^\/gen$/i, /^\/codegen$/i, /^\/generate$/i] },
-  { intent: 'open_refactor', patterns: [/^\/refactor$/i] },
-  { intent: 'open_designdoc', patterns: [/^\/doc$/i, /^\/designdoc$/i, /^\/prd$/i] },
-  { intent: 'open_pipeline', patterns: [/^\/pipeline$/i, /^\/tasks$/i] },
+  { intent: 'open_scan', patterns: [/^\/scan$/i] },
+  { intent: 'open_findings', patterns: [/^\/findings$/i] },
+  { intent: 'open_report', patterns: [/^\/report$/i] },
   { intent: 'open_settings', patterns: [/^\/settings$/i, /^\/config$/i] },
   { intent: 'open_files', patterns: [/^\/files$/i, /^\/explorer$/i] },
   { intent: 'open_terminal', patterns: [/^\/terminal$/i, /^\/term$/i] },
   { intent: 'open_agents', patterns: [/^\/agents$/i] },
   { intent: 'open_usage', patterns: [/^\/usage$/i, /^\/costs$/i] },
-  { intent: 'open_compare', patterns: [/^\/compare$/i] },
   { intent: 'new_chat', patterns: [/^\/new$/i, /^\/clear$/i] },
-  { intent: 'onboard', patterns: [/^\/onboard$/i, /^\/analyze$/i, /^\/scan$/i] },
+  { intent: 'onboard', patterns: [/^\/onboard$/i, /^\/analyze$/i] },
   { intent: 'remember', patterns: [/^\/remember\s+(.+)/i] },
   { intent: 'recall', patterns: [/^\/recall$/i, /^\/memories$/i, /^\/memory$/i] },
 
@@ -211,16 +207,14 @@ export async function routeCommand(
 
   // UI panel openers — don't execute anything, just signal which panel to open
   const uiIntents: Record<string, string> = {
-    open_codegen: 'codegen',
-    open_refactor: 'refactor',
-    open_designdoc: 'designdoc',
-    open_pipeline: 'pipeline',
+    open_scan: 'scan',
+    open_findings: 'findings',
+    open_report: 'report',
     open_settings: 'settings',
     open_files: 'files',
     open_terminal: 'terminal',
     open_agents: 'agents',
     open_usage: 'usage',
-    open_compare: 'compare',
     new_chat: 'new_chat',
   };
 
@@ -397,11 +391,9 @@ export function getSlashCommandHints(): Array<{ command: string; description: st
     { command: '/search <term>', description: 'Search codebase' },
     { command: '/ls [path]', description: 'List directory contents' },
     { command: '/read <file>', description: 'Read a file' },
-    { command: '/gen', description: 'Open code generator' },
-    { command: '/refactor', description: 'Open refactor panel' },
-    { command: '/doc', description: 'Open design doc generator' },
-    { command: '/pipeline', description: 'Open task pipeline' },
-    { command: '/compare', description: 'Compare models' },
+    { command: '/scan', description: 'Open scan dashboard' },
+    { command: '/findings', description: 'Open findings' },
+    { command: '/report', description: 'Open report' },
     { command: '/settings', description: 'Open settings' },
     { command: '/usage', description: 'View usage & costs' },
     { command: '/agents', description: 'Manage agents' },

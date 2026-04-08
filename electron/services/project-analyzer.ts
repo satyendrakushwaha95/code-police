@@ -333,6 +333,20 @@ export async function analyzeProject(rootPath: string): Promise<ProjectAnalysis>
   if (allFiles.some(f => f.includes('.github/workflows'))) detectedPatterns.push('CI/CD (GitHub Actions)');
   if (allFiles.some(f => f.includes('prisma/schema'))) detectedPatterns.push('Prisma ORM');
 
+  // Security-specific pattern detection
+  if (allFiles.some(f => f.includes('SecurityConfig') || f.includes('WebSecurityConfigurerAdapter'))) detectedPatterns.push('Spring Security');
+  if (allFiles.some(f => f.includes('auth.guard') || f.includes('auth-guard'))) detectedPatterns.push('Angular Route Guards');
+  if (allFiles.some(f => f.includes('Middleware') && f.endsWith('.php'))) detectedPatterns.push('PHP Middleware');
+  if (allFiles.some(f => f.endsWith('.env') || f.endsWith('.env.example'))) detectedPatterns.push('Environment config');
+  if (allFiles.some(f => f.includes('csrf') || f.includes('CSRF'))) detectedPatterns.push('CSRF protection');
+  if (allFiles.some(f => f.includes('cors') || f.includes('CORS'))) detectedPatterns.push('CORS configuration');
+  if (deps?.['helmet'] || deps?.['express-rate-limit']) detectedPatterns.push('Security middleware (Node)');
+  if (deps?.['bcrypt'] || deps?.['bcryptjs'] || deps?.['argon2']) detectedPatterns.push('Password hashing');
+  if (deps?.['jsonwebtoken'] || deps?.['jose']) detectedPatterns.push('JWT authentication');
+  if (deps?.['passport'] || deps?.['@nestjs/passport']) detectedPatterns.push('Passport auth');
+  if (allFiles.some(f => f.includes('sanitize') || f.includes('DomSanitizer'))) detectedPatterns.push('Input sanitization');
+  if (allDirs.some(d => d.includes('auth') || d.includes('security'))) detectedPatterns.push('Auth/security module');
+
   // Sample key files for LLM analysis (read first ~2KB of important files)
   const keyFileSamples: Array<{ path: string; content: string; role: string }> = [];
   const samplesToRead: Array<{ path: string; role: string }> = [

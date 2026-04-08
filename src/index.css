@@ -215,6 +215,7 @@ input:focus, textarea:focus, select:focus {
 
 .main-content {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -223,6 +224,94 @@ input:focus, textarea:focus, select:focus {
 
 .main-content.chat-closed {
   flex: 1;
+}
+
+/* ── Main Tab Bar ── */
+.main-tab-bar {
+  display: flex;
+  gap: 2px;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+}
+
+.main-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: 13px/1 var(--font-sans);
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+  -webkit-app-region: no-drag;
+}
+
+.main-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.main-tab.active {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.main-tab-icon {
+  display: flex;
+  width: 16px;
+  height: 16px;
+}
+
+.main-tab-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.main-tab-label {
+  white-space: nowrap;
+}
+
+.main-tab-content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── History Side Panel ── */
+.history-side-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 340px;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+}
+
+.history-side-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-side-panel-header h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
 }
 
 /* ═══════════════════════════════════

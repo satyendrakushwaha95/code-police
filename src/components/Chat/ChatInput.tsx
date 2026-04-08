@@ -3,20 +3,17 @@ import type { FileAttachment } from '../../types/chat';
 import { readFileContent, formatFileSize } from '../../services/fileReader';
 import { useWorkspace } from '../../store/WorkspaceContext';
 import { useSettings } from '../../store/SettingsContext';
-import { useAgents } from '../../store/AgentContext';
 import { getSlashCommandHints } from '../../services/command-router';
-import { ollamaService } from '../../services/ollama';
 import type { WorkspaceFile } from '../../store/WorkspaceContext';
 import './Chat.css';
 
 interface ChatInputProps {
-  onSend: (message: string, attachments: FileAttachment[], runAsPipeline?: boolean, agentId?: string) => void;
+  onSend: (message: string, attachments: FileAttachment[]) => void;
   onStop: () => void;
   isStreaming: boolean;
   disabled: boolean;
   connected?: boolean | null;
   initialValue?: string;
-  onCompare?: (prompt?: string) => void;
   activeModel?: { providerId: string; model: string } | null;
   onModelChange?: (selection: { providerId: string; model: string } | null) => void;
 }
@@ -35,17 +32,14 @@ function isEmbeddingModel(name: string): boolean {
 }
 
 const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function ChatInput(
-  { onSend, onStop, isStreaming, disabled, connected, initialValue = '', onCompare, activeModel, onModelChange },
+  { onSend, onStop, isStreaming, disabled, connected, initialValue = '', activeModel, onModelChange },
   ref
 ) {
   const [input, setInput] = useState(initialValue);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [inputMode, setInputMode] = useState<'chat' | 'agent'>('chat');
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const { settings } = useSettings();
   const { state: workspace } = useWorkspace();
-  const { state: agentState } = useAgents();
   const [showMentionMenu, setShowMentionMenu] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -54,7 +48,6 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
   const [slashQuery, setSlashQuery] = useState('');
   const [slashIndex, setSlashIndex] = useState(0);
   const [pasteHint, setPasteHint] = useState<{ type: string; label: string } | null>(null);
-  const [isEnhancing, setIsEnhancing] = useState(false);
   const [showModelPicker, setShowModelPicker] = useState(false);
   const [providerModels, setProviderModels] = useState<Array<{ id: string; name: string; providerId: string; providerName: string; size?: number }>>([]);
   const [loadingModels, setLoadingModels] = useState(false);
@@ -65,12 +58,6 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
   useImperativeHandle(ref, () => ({
     focus: () => textareaRef.current?.focus(),
   }));
-
-  useEffect(() => {
-    if (agentState.activeAgent) {
-      setSelectedAgentId(agentState.activeAgent.id);
-    }
-  }, [agentState.activeAgent]);
 
   useEffect(() => {
     if (!showModelPicker) return;
@@ -104,17 +91,14 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
 
   const handleSubmit = useCallback(() => {
     if ((!input.trim() && attachments.length === 0) || disabled) return;
-    const isAgent = inputMode === 'agent';
-    const agentId = isAgent ? selectedAgentId || undefined : undefined;
-    onSend(input.trim(), attachments, isAgent, agentId);
+    onSend(input.trim(), attachments);
     setInput('');
     setAttachments([]);
-    setInputMode('chat');
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.overflowY = 'hidden';
     }
-  }, [input, attachments, disabled, onSend, inputMode, selectedAgentId]);
+  }, [input, attachments, disabled, onSend]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (showSlashMenu && filteredSlashHints.length > 0) {
@@ -274,57 +258,6 @@ const ChatInput = forwardRef<{ focus: () => void }, ChatInputProps>(function Cha
     }
   };
 
-  const handleEnhancePrompt = async () => {
-    const text = input.trim();
-    if (!text || text.length < 5 || isEnhancing) return;
-
-    setIsEnhancing(true);
-    try {
-      let memoryContext = '';
-      try {
-        memoryContext = await ipcRendererLocal.invoke('memory:buildContext', { query: text });
-      } catch { /* no memories */ }
-
-      const profilePrompt = memoryContext || '';
-
-      const enhanceSystemPrompt = `You are a prompt engineering expert. Your job is to enhance the user's prompt to be more specific, structured, and effective for an AI assistant.
-
-Rules:
-- Keep the user's core intent intact
-- Add specificity: mention output format, edge cases, constraints
-- Add structure: break vague requests into clear steps
-- Keep it concise — don't make it 10x longer, aim for 2-3x
-- If the prompt is about code, specify language, patterns, error handling
-- Maintain the user's tone (casual stays casual, technical stays technical)
-- Return ONLY the enhanced prompt text, no explanations or prefixes
-${profilePrompt}`;
-
-      const result = await ollamaService.chatComplete(
-        activeModel?.providerId || 'ollama-default',
-        activeModel?.model || settings.model,
-        [
-          { role: 'system', content: enhanceSystemPrompt },
-          { role: 'user', content: `Enhance this prompt:\n\n${text}` }
-        ],
-        { temperature: 0.4, max_tokens: 1000 },
-        'prompt_enhance_inline'
-      );
-
-      const enhanced = result.content.trim();
-      if (enhanced && enhanced.length > text.length * 0.5) {
-        setInput(enhanced);
-        if (textareaRef.current) {
-          textareaRef.current.style.height = 'auto';
-          textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
-        }
-      }
-    } catch (err) {
-      console.error('Prompt enhancement failed:', err);
-    } finally {
-      setIsEnhancing(false);
-    }
-  };
-
   const modelDisplayName = activeModel
     ? activeModel.model
     : settings.model;
@@ -469,18 +402,6 @@ ${profilePrompt}`;
             disabled={disabled}
           />
         </div>
-        <button
-          className={`btn-icon enhance-btn ${isEnhancing ? 'enhancing' : ''}`}
-          onClick={handleEnhancePrompt}
-          disabled={!input.trim() || input.trim().length < 5 || isEnhancing || isStreaming}
-          title="Enhance prompt (uses AI + your memories to improve the prompt)"
-        >
-          {isEnhancing ? (
-            <svg className="enhance-spinner" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v4m0 12v4m10-10h-4M6 12H2m15.07-5.07l-2.83 2.83M9.76 14.24l-2.83 2.83m11.14 0l-2.83-2.83M9.76 9.76L6.93 6.93"/></svg>
-          ) : (
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z"/><path d="M19 13l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3z"/></svg>
-          )}
-        </button>
         {isStreaming ? (
           <button className="btn-icon stop-btn" onClick={onStop} title="Stop generating">
             <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
@@ -553,51 +474,6 @@ ${profilePrompt}`;
               </div>
             )}
           </div>
-        </div>
-        <div className="input-actions-right">
-          <button
-            className={`mode-btn ${inputMode === 'chat' ? 'active' : ''}`}
-            onClick={() => setInputMode('chat')}
-            disabled={isStreaming}
-          >
-            Chat
-          </button>
-          {onCompare && (
-            <button
-              className="mode-btn compare-btn"
-              onClick={() => onCompare(input.trim() || undefined)}
-              disabled={isStreaming}
-              title="Compare responses from multiple models side-by-side"
-            >
-              Compare
-            </button>
-          )}
-          <button
-            className={`mode-btn ${inputMode === 'agent' ? 'active' : ''}`}
-            onClick={() => setInputMode('agent')}
-            disabled={isStreaming}
-          >
-            Send to Agent
-          </button>
-          {inputMode === 'agent' && (
-            <select
-              className="agent-selector"
-              value={selectedAgentId || ''}
-              onChange={(e) => setSelectedAgentId(e.target.value || null)}
-              disabled={isStreaming}
-              title={!workspace.rootPath ? 'Open a workspace folder first to use agents' : ''}
-            >
-              {agentState.agents.length === 0 ? (
-                <option value="">No agents available</option>
-              ) : (
-                agentState.agents.map(agent => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.icon} {agent.name}
-                  </option>
-                ))
-              )}
-            </select>
-          )}
         </div>
       </div>
 

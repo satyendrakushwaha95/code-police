@@ -9,11 +9,11 @@ interface RoutingSettingsPanelProps {
 }
 
 const CATEGORY_LABELS: Record<TaskCategory, string> = {
-  code_generation: 'Code Generation',
-  code_refactor: 'Code Refactor',
-  documentation: 'Documentation',
-  planning: 'Planning',
-  review: 'Review',
+  code_generation: 'Fix Generation',
+  code_refactor: 'Code Refactor (unused)',
+  documentation: 'Documentation (unused)',
+  planning: 'Scan Analysis',
+  review: 'Security Review',
   chat_general: 'Chat (General)',
 };
 

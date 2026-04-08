@@ -13,19 +13,14 @@ import MessageBubble from './MessageBubble';
 import HeaderLogo from '../../header-logo.png';
 import ChatInput from './ChatInput';
 import SemanticSearchModal from './SemanticSearchModal';
-import RefactorModal from './RefactorModal';
+
 import { useToast } from '../../hooks/useToast';
 import './Chat.css';
 
 interface ChatViewProps {
   inputRef?: React.RefObject<{ focus: () => void } | null>;
   onCloseChat?: () => void;
-  onOpenCodeGen?: () => void;
-  onOpenRefactor?: () => void;
-  onOpenPipelinePanel?: () => void;
-  onOpenAgentPanel?: () => void;
   onOpenFilePanel?: () => void;
-  onOpenCompare?: (prompt?: string) => void;
 }
 
 export interface ChatViewHandle {
@@ -33,7 +28,7 @@ export interface ChatViewHandle {
 }
 
 const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
-  { inputRef: _inputRef, onCloseChat, onOpenCodeGen, onOpenRefactor, onOpenPipelinePanel, onOpenAgentPanel, onOpenFilePanel, onOpenCompare },
+  { inputRef: _inputRef, onCloseChat, onOpenFilePanel },
   ref
 ) {
   const { state, dispatch, activeConversation } = useConversations();
@@ -42,8 +37,6 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
   const { state: workspace } = useWorkspace();
   const { state: agentState } = useAgents();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const activePipelineRef = useRef<{ convId: string; messageId: string } | null>(null);
-  const pipelineMessageSentRef = useRef<boolean>(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const chatInputRef = useRef<{ focus: () => void }>(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -104,81 +97,6 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
     return () => document.removeEventListener('localmind:insertPrompt', handler);
   }, []);
 
-  // Listen for pipeline events to update message status
-  useEffect(() => {
-    const ipcRenderer = (window as any).ipcRenderer;
-    if (!ipcRenderer) return;
-
-    const handlePipelineComplete = (_event: any, data: { runId: string; verdict: string; finalOutput: any }) => {
-      console.log('[ChatView] Pipeline complete event:', data);
-      if (!activePipelineRef.current) return;
-      
-      dispatch({ type: 'UPDATE_MESSAGE', payload: { 
-        conversationId: activePipelineRef.current.convId, 
-        messageId: activePipelineRef.current.messageId, 
-        content: `✅ Pipeline completed - Verdict: ${data.verdict}`,
-        pipelineStatus: 'complete',
-      }});
-      activePipelineRef.current = null;
-    };
-
-    const handlePipelineError = (_event: any, data: { runId: string; error: string }) => {
-      console.log('[ChatView] Pipeline error event:', data);
-      if (!activePipelineRef.current) return;
-      
-      dispatch({ type: 'UPDATE_MESSAGE', payload: { 
-        conversationId: activePipelineRef.current.convId, 
-        messageId: activePipelineRef.current.messageId, 
-        content: `❌ Pipeline failed: ${data.error}`,
-        pipelineStatus: 'failed',
-      }});
-      activePipelineRef.current = null;
-    };
-
-    const handlePipelineCancelled = (_event: any, data: { runId: string }) => {
-      console.log('[ChatView] Pipeline cancelled event:', data);
-      if (!activePipelineRef.current) return;
-      
-      dispatch({ type: 'UPDATE_MESSAGE', payload: { 
-        conversationId: activePipelineRef.current.convId, 
-        messageId: activePipelineRef.current.messageId, 
-        content: `⛔ Pipeline cancelled`,
-        pipelineStatus: 'cancelled',
-      }});
-      activePipelineRef.current = null;
-    };
-
-    const handleApprovalRequest = (_event: any, data: { runId: string; stage: string; stageResult: any; message: string }) => {
-      if (!activePipelineRef.current) return;
-
-      dispatch({ type: 'ADD_MESSAGE', payload: {
-        conversationId: activePipelineRef.current.convId,
-        message: {
-          id: uuidv4(),
-          role: 'assistant' as const,
-          content: data.message,
-          timestamp: Date.now(),
-          isPipeline: true,
-          pipelineStatus: 'awaiting_approval' as const,
-          pipelineRunId: data.runId,
-          approvalData: { runId: data.runId, stage: data.stage },
-        }
-      }});
-    };
-
-    ipcRenderer.on('pipeline:complete', handlePipelineComplete);
-    ipcRenderer.on('pipeline:error', handlePipelineError);
-    ipcRenderer.on('pipeline:cancelled', handlePipelineCancelled);
-    ipcRenderer.on('pipeline:await_approval', handleApprovalRequest);
-
-    return () => {
-      ipcRenderer.off('pipeline:complete', handlePipelineComplete);
-      ipcRenderer.off('pipeline:error', handlePipelineError);
-      ipcRenderer.off('pipeline:cancelled', handlePipelineCancelled);
-      ipcRenderer.off('pipeline:await_approval', handleApprovalRequest);
-    };
-  }, [dispatch]);
-
   // Auto-send pending prompt when conversation is ready
   useEffect(() => {
     if (pendingPrompt && activeConversation && activeConversation.messages.length === 0) {
@@ -230,7 +148,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
       )
     : null;
 
-  const sendMessage = useCallback(async (content: string, attachments: FileAttachment[], runAsPipeline: boolean = false, agentId?: string) => {
+  const sendMessage = useCallback(async (content: string, attachments: FileAttachment[]) => {
     if (!activeConversation) {
       dispatch({ type: 'CREATE_CONVERSATION', payload: { model: settings.model } });
       const newConvId = state.conversations.length > 0 ? state.conversations[0]?.id : null;
@@ -241,7 +159,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
     if (!convId) return;
 
     // ── Jarvis: Command Router ──────────────────────────────────────────
-    if (!runAsPipeline && attachments.length === 0) {
+    if (attachments.length === 0) {
       const cmdResult = await routeCommand(content, workspace.rootPath || undefined);
 
       if (cmdResult.intent !== 'none' && cmdResult.executed) {
@@ -278,16 +196,11 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
         // Handle UI panel openers
         if (cmdResult.uiAction) {
           const actionMap: Record<string, () => void> = {
-            codegen: () => onOpenCodeGen?.(),
-            refactor: () => onOpenRefactor?.(),
             designdoc: () => document.dispatchEvent(new CustomEvent('localmind:openDesignDoc')),
-            pipeline: () => onOpenPipelinePanel?.(),
             settings: () => document.dispatchEvent(new CustomEvent('localmind:openSettings')),
             files: () => onOpenFilePanel?.(),
             terminal: () => document.dispatchEvent(new CustomEvent('localmind:openTerminal')),
-            agents: () => onOpenAgentPanel?.(),
             usage: () => document.dispatchEvent(new CustomEvent('localmind:openUsage')),
-            compare: () => onOpenCompare?.(content),
             new_chat: () => dispatch({ type: 'CREATE_CONVERSATION', payload: { model: settings.model } }),
           };
           const action = actionMap[cmdResult.uiAction];
@@ -313,90 +226,6 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
       }
     }
     // ── End Command Router ──────────────────────────────────────────────
-
-    if (runAsPipeline) {
-      console.log('[ChatView] Pipeline mode triggered', agentId ? `with agent ${agentId}` : '');
-      
-      let projectRoot = workspace.rootPath;
-
-      if (!projectRoot && settings.defaultWorkspacePath) {
-        projectRoot = settings.defaultWorkspacePath;
-        console.log('[ChatView] Using default workspace path:', projectRoot);
-      }
-
-      if (!projectRoot) {
-        showToast('Please set a default workspace in Settings or open a project folder.', 'error');
-        return;
-      }
-
-      const ipcRenderer = (window as any).ipcRenderer;
-      if (!ipcRenderer) {
-        showToast('IPC not available', 'error');
-        return;
-      }
-
-      console.log('[ChatView] Adding user message to:', convId);
-      dispatch({ type: 'ADD_MESSAGE', payload: { conversationId: convId, message: {
-        id: uuidv4(),
-        role: 'user',
-        content,
-        timestamp: Date.now(),
-      }}});
-
-      const pipelineMessageId = uuidv4();
-      console.log('[ChatView] Adding pipeline status message:', pipelineMessageId);
-
-      // Reset the flag for new pipeline
-      pipelineMessageSentRef.current = false;
-
-      // Immediately show the "Task moved to Pipeline" message
-      dispatch({ type: 'ADD_MESSAGE', payload: { conversationId: convId, message: {
-        id: pipelineMessageId,
-        role: 'assistant',
-        content: `Task moved to Pipeline${agentId ? ' with custom agent' : ''}`,
-        timestamp: Date.now(),
-        isPipeline: true,
-        pipelineStatus: 'running',
-        pipelineRunId: '',
-      }}});
-      activePipelineRef.current = { convId, messageId: pipelineMessageId };
-      pipelineMessageSentRef.current = true;
-
-      try {
-        console.log('[ChatView] Calling pipeline:run IPC');
-        const result = await ipcRenderer.invoke('pipeline:run', {
-          task: content,
-          options: {
-            maxRetries: 2,
-            timeoutMs: 10 * 60 * 1000,
-            autoExecute: true,
-          },
-          projectRoot,
-          agentId,
-        });
-        console.log('[ChatView] Pipeline started:', result.runId);
-        
-        // Update the message with the actual runId
-        dispatch({ type: 'UPDATE_MESSAGE', payload: { 
-          conversationId: convId, 
-          messageId: pipelineMessageId,
-          pipelineRunId: result.runId,
-        }});
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        console.error('[ChatView] Pipeline error:', errorMsg);
-        
-        // Update the message to show error
-        dispatch({ type: 'UPDATE_MESSAGE', payload: { 
-          conversationId: convId, 
-          messageId: pipelineMessageId,
-          content: `Pipeline failed: ${errorMsg}`,
-          pipelineStatus: 'failed',
-        }});
-        showToast(`Pipeline error: ${errorMsg}`, 'error');
-      }
-      return;
-    }
 
     // Regular chat flow
     // Merge pending attachments from file panel
@@ -729,9 +558,6 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
 
     const quickActions = [
       { label: 'New Chat', icon: 'chat', action: () => dispatch({ type: 'CREATE_CONVERSATION', payload: { model: settings.model } }) },
-      { label: 'Generate Code', icon: 'bolt', action: () => onOpenCodeGen?.() },
-      { label: 'Refactor', icon: 'wrench', action: () => onOpenRefactor?.() },
-      { label: 'Pipeline', icon: 'activity', action: () => onOpenPipelinePanel?.() },
       { label: 'Open Project', icon: 'folder', action: () => onOpenFilePanel?.() },
       { label: 'Onboard', icon: 'scan', action: handleOnboard },
     ];
@@ -842,21 +668,6 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
                   {item.icon === 'chat' && (
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
-                    </svg>
-                  )}
-                  {item.icon === 'bolt' && (
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-                    </svg>
-                  )}
-                  {item.icon === 'wrench' && (
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
-                    </svg>
-                  )}
-                  {item.icon === 'activity' && (
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
                     </svg>
                   )}
                   {item.icon === 'folder' && (
@@ -972,10 +783,6 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
               content={msg.content}
               isStreaming={msg.isStreaming}
               timestamp={msg.timestamp}
-              isPipeline={msg.isPipeline}
-              pipelineStatus={msg.pipelineStatus}
-              pipelineRunId={msg.pipelineRunId}
-              approvalData={msg.approvalData}
               usage={msg.usage}
               suggestions={idx === activeConversation.messages.length - 1 ? msg.suggestions : undefined}
               onEdit={msg.role === 'user' ? (newContent) => handleEditMessage(msg.id, newContent) : undefined}
@@ -987,19 +794,6 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
                 ipc?.invoke('memory:add', { category: 'general', content: text, source: 'selection' });
                 showToast('Saved to memory', 'success');
               }}
-              onApprovalDecision={msg.approvalData ? (decision: 'approve' | 'reject') => {
-                const ipc = (window as any).ipcRenderer;
-                if (!ipc || !msg.approvalData) return;
-                ipc.invoke(decision === 'approve' ? 'pipeline:approve' : 'pipeline:reject', { runId: msg.approvalData.runId });
-                dispatch({ type: 'UPDATE_MESSAGE', payload: {
-                  conversationId: activeConversation.id,
-                  messageId: msg.id,
-                  pipelineStatus: decision === 'approve' ? 'running' : 'cancelled',
-                  content: decision === 'approve'
-                    ? msg.content + '\n\n*Approved — pipeline continuing...*'
-                    : msg.content + '\n\n*Rejected — pipeline stopped.*',
-                }});
-              } : undefined}
             />
           ))}
           <div ref={messagesEndRef} />
@@ -1041,7 +835,6 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
             disabled={!connected}
             connected={connected}
             initialValue={pendingPrompt || undefined}
-            onCompare={onOpenCompare}
             activeModel={activeModelOverride}
             onModelChange={setActiveModelOverride}
           />
@@ -1055,18 +848,7 @@ const ChatView = forwardRef<ChatViewHandle, ChatViewProps>(function ChatView(
         />
       )}
 
-      {refactorCode && (
-        <RefactorModal
-          code={refactorCode.code}
-          filename={refactorCode.filename}
-          onApply={(newCode) => {
-            const event = new CustomEvent('localmind:applyRefactor', { detail: { newCode, filename: refactorCode.filename } });
-            document.dispatchEvent(event);
-            setRefactorCode(null);
-          }}
-          onClose={() => setRefactorCode(null)}
-        />
-      )}
+      {/* RefactorModal removed — security scanner mode */}
     </div>
   );
 });

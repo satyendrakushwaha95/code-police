@@ -81,10 +81,6 @@ interface MessageBubbleProps {
   content: string;
   isStreaming?: boolean;
   timestamp: number;
-  isPipeline?: boolean;
-  pipelineStatus?: 'starting' | 'running' | 'complete' | 'failed' | 'cancelled' | 'awaiting_approval';
-  pipelineRunId?: string;
-  approvalData?: { runId: string; stage: string };
   usage?: MessageUsage;
   suggestions?: string[];
   onEdit?: (newContent: string) => void;
@@ -92,7 +88,6 @@ interface MessageBubbleProps {
   onDelete?: () => void;
   onSendFollowUp?: (text: string) => void;
   onRememberText?: (text: string) => void;
-  onApprovalDecision?: (decision: 'approve' | 'reject') => void;
 }
 
 function formatTokenCount(n: number): string {
@@ -115,9 +110,9 @@ const COLLAPSE_LINE_THRESHOLD = 40;
 const COLLAPSE_CHAR_THRESHOLD = 2500;
 
 export default function MessageBubble({
-  role, content, isStreaming, timestamp, isPipeline, pipelineStatus, usage,
-  approvalData, suggestions, onEdit, onRegenerate, onDelete, onSendFollowUp,
-  onRememberText, onApprovalDecision,
+  role, content, isStreaming, timestamp, usage,
+  suggestions, onEdit, onRegenerate, onDelete, onSendFollowUp,
+  onRememberText,
 }: MessageBubbleProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(content);
@@ -222,11 +217,9 @@ export default function MessageBubble({
 
   const timeStr = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-  const isApprovalRequest = isPipeline && pipelineStatus === 'awaiting_approval';
-
   return (
     <div
-      className={`message-bubble ${role} ${isStreaming ? 'streaming' : ''} ${isApprovalRequest ? 'approval-request' : ''} fade-in`}
+      className={`message-bubble ${role} ${isStreaming ? 'streaming' : ''} fade-in`}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
@@ -294,48 +287,6 @@ export default function MessageBubble({
                 <span className="dot"></span>
                 <span className="dot"></span>
                 <span className="dot"></span>
-              </div>
-            )}
-            {isPipeline && pipelineStatus && pipelineStatus !== 'running' && pipelineStatus !== 'awaiting_approval' && (
-              <div className={`pipeline-status ${pipelineStatus}`}>
-                <span className="pipeline-icon">
-                  {pipelineStatus === 'starting' && ''}
-                  {pipelineStatus === 'complete' && ''}
-                  {pipelineStatus === 'failed' && ''}
-                  {pipelineStatus === 'cancelled' && ''}
-                </span>
-                <span className="pipeline-label">
-                  {pipelineStatus === 'complete' && 'Pipeline Completed'}
-                  {pipelineStatus === 'failed' && 'Pipeline Failed'}
-                  {pipelineStatus === 'cancelled' && 'Pipeline Cancelled'}
-                </span>
-              </div>
-            )}
-
-            {isPipeline && pipelineStatus === 'awaiting_approval' && onApprovalDecision && (
-              <div className="pipeline-approval-actions">
-                <div className="approval-header">
-                  <span className="approval-pulse" />
-                  <span className="approval-title">Approval Required</span>
-                  <span className="approval-stage-pill">{approvalData?.stage}</span>
-                </div>
-                <p className="approval-hint">Review the output above, then approve to continue the pipeline or reject to stop.</p>
-                <div className="approval-buttons">
-                  <button
-                    className="approval-btn approve"
-                    onClick={() => onApprovalDecision('approve')}
-                  >
-                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                    Approve &amp; Continue
-                  </button>
-                  <button
-                    className="approval-btn reject"
-                    onClick={() => onApprovalDecision('reject')}
-                  >
-                    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                    Reject &amp; Stop
-                  </button>
-                </div>
               </div>
             )}
 
